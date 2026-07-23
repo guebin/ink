@@ -99,6 +99,18 @@ body { display: flex; flex-direction: column; }
   background: conic-gradient(#e74c3c, #f1c40f, #2ecc71, #1abc9c, #3498db, #9b59b6, #e74c3c);
 }
 
+/* The highlighter case: fewer, wider, flat-tipped, and set further apart, so
+   you can tell at a glance which pen you are holding. */
+.dots.hl { gap: 7px; }
+.dots.hl i {
+  width: 26px; height: 17px;
+  border-radius: 4px 4px 6px 6px;
+}
+.dots.hl i.rainbow { border-radius: 4px 4px 6px 6px; }
+
+/* Colour and thickness have nothing to change unless a drawing tool is up. */
+.off { opacity: .3; pointer-events: none; }
+
 .sizedot { width: 22px; display: grid; place-items: center; }
 .sizedot::after {
   content: "";

@@ -11,10 +11,14 @@ const hintEl = document.getElementById('hint');
 const bgx = bg.getContext('2d');
 const ctx = ink.getContext('2d');
 
-const PALETTE = [
+const PEN_PALETTE = [
   '#000000', '#7f8085', '#e74c3c', '#e67e22', '#f1c40f',
   '#2ecc71', '#1abc9c', '#3498db', '#5b6ef5', '#9b59b6', '#e84393',
 ];
+
+/** A highlighter case holds five fluorescent barrels, not eleven inks —
+    these are the Monami Adding Super colours. */
+const HL_PALETTE = ['#ff2e88', '#ff8a1e', '#ffe800', '#7cd80a', '#3bbdf5'];
 
 const state = {
   strokes: [],
@@ -23,7 +27,7 @@ const state = {
   tool: 'select',
   lastInk: 'pen',
   // pen and highlighter remember their own colour, like a real pen case
-  inkColors: { pen: '#000000', highlighter: '#f1c40f' },
+  inkColors: { pen: '#000000', highlighter: '#ffe800' },
   size: 3,
   sel: { strokes: [], items: [] },
   live: null,           // stroke being drawn
@@ -1267,7 +1271,8 @@ function setTool(tool) {
   ink.style.cursor = tool === 'select' ? 'default'
     : tool === 'text' ? 'text' : 'crosshair';
   if (tool !== 'select') state.sel = { strokes: [], items: [] };
-  markActiveDot();
+  renderDots();
+  syncInkControls();
   draw();
 }
 
@@ -1291,14 +1296,32 @@ function pickColor(c) {
   markActiveDot();
 }
 
-PALETTE.forEach((c) => {
-  const d = document.createElement('i');
-  d.style.background = c;
-  d.style.color = c;
-  d.dataset.color = c;
-  d.onclick = () => pickColor(c);
-  dots.appendChild(d);
-});
+/** The pen and the highlighter carry different colours, so the toolbar shows
+    one case or the other — round ink dots, or fluorescent marker tips. */
+function renderDots() {
+  const highlighter = activeInk() === 'highlighter';
+  dots.classList.toggle('hl', highlighter);
+  dots.replaceChildren();
+  for (const c of highlighter ? HL_PALETTE : PEN_PALETTE) {
+    const d = document.createElement('i');
+    d.style.background = c;
+    d.style.color = c;
+    d.dataset.color = c;
+    d.onclick = () => pickColor(c);
+    dots.appendChild(d);
+  }
+  dots.append(custom, picker);
+  markActiveDot();
+}
+
+/** Colour and thickness belong to the tools that draw with them; on select,
+    eraser or text there is nothing for them to change. */
+const COLOURED_TOOLS = ['ink', 'line', 'rect'];
+function syncInkControls() {
+  const live = COLOURED_TOOLS.includes(state.tool);
+  for (const el of [dots, sizeDot, sizeInput]) el.classList.toggle('off', !live);
+  sizeInput.disabled = !live;
+}
 
 custom.className = 'rainbow';
 custom.title = 'Custom colour';
@@ -1306,7 +1329,6 @@ picker.type = 'color';
 picker.style.display = 'none';
 custom.onclick = () => picker.click();
 picker.oninput = () => pickColor(picker.value);
-dots.append(custom, picker);
 
 const sizeInput = document.getElementById('size');
 const sizeDot = document.getElementById('sizedot');
@@ -1315,6 +1337,8 @@ sizeInput.oninput = () => {
   sizeDot.style.setProperty('--d', Math.max(2, Math.min(state.size, 18)) + 'px');
 };
 sizeInput.oninput();
+renderDots();
+syncInkControls();
 
 document.getElementById('zoom').onchange = (e) => {
   const v = e.target.value;
