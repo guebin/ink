@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// by the website and this app. This file is the native shell around it — a
 /// window, the menus, file panels, and .ink document handling.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
-                         WKScriptMessageHandler, WKNavigationDelegate {
+                         WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
 
     private var window: NSWindow!
     private var web: WKWebView!
@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
+        web.uiDelegate = self
         if #available(macOS 13.3, *) { web.isInspectable = true }
 
         let vis = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -158,6 +159,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if let pending = pendingOpenURL {
             pendingOpenURL = nil
             load(url: pending)
+        }
+    }
+
+    /// A browser supplies the chooser for `<input type="file">`, but a macOS
+    /// WKWebView treats it as cancelled unless its UI delegate opens one.
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = [.image]
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
         }
     }
 

@@ -522,7 +522,11 @@ async function bakeCard(item, scale) {
       ? await loadSVG(cardSVG(body, styles, realW, roomH))
       : null;
     const [, realH] = tall ? svgCardBounds(tall, realW, roomH) : [0, 0];
-    if (realW && realH && (Math.abs(realW - w) > 1 || Math.abs(realH - h) > 1)) {
+    // A single pixel matters at a line-break boundary: the sizing pass can
+    // fit on one line at 279px while the page's 278px guess wraps the final
+    // Hangul syllable. Ignoring that 1px difference then keeps the one-line
+    // height and clips the wrapped line.
+    if (realW && realH && (realW !== w || realH !== h)) {
       // Keep any resize the user has applied while the natural size moves.
       const kw = item.nw ? item.w / item.nw : 1;
       const kh = item.nh ? item.h / item.nh : 1;
