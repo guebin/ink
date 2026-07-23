@@ -124,7 +124,8 @@ body { display: flex; flex-direction: column; }
 
 #stage { position: relative; flex: 1; overflow: hidden; background: #fff; }
 #bg, #ink { position: absolute; inset: 0; width: 100%; height: 100%; }
-#overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* Cards are laid out here to be measured and baked, never shown. */
+#overlay { position: absolute; top: 0; left: -100000px; width: 4000px; visibility: hidden; }
 #ink { touch-action: none; }
 
 .item {

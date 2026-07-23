@@ -152,7 +152,7 @@ function restore(snap) {
     item.el = it.type === 'card' ? buildCardEl(it.source) : buildImgEl(it.src);
     overlay.appendChild(item.el);
     state.items.push(item);
-    if (item.type === 'card') trackCard(item);
+    if (item.type === 'card') trackCard(item); else attachImage(item);
   });
   state.sel = { strokes: [], items: [] };
   syncItems();
@@ -270,6 +270,7 @@ function draw() {
   ctx.scale(state.cam.z, state.cam.z);
   ctx.translate(-state.cam.x, -state.cam.y);
 
+  drawItems();
   state.strokes.forEach(drawStroke);
   if (state.live) drawStroke(state.live);
 
@@ -281,6 +282,8 @@ function draw() {
     ctx.setLineDash([4 / state.cam.z, 4 / state.cam.z]);
     ctx.strokeRect(sel.x - 4, sel.y - 4, sel.w + 8, sel.h + 8);
     ctx.restore();
+    const solo = soloItem();
+    if (solo) drawHandles(solo);
 
   }
   if (state.marquee) {
@@ -297,21 +300,26 @@ function draw() {
   syncItems();
 }
 
-function syncItems() {
-  const { x, y, z } = state.cam;
+/** Cards and images are bitmaps now, so painting them is one drawImage. */
+function drawItems() {
   for (const it of state.items) {
-    const sx = (it.x - x) * z, sy = (it.y - y) * z;
+    const bmp = it.type === 'card' ? it.bmp : it.imgEl;
+    if (bmp && (it.type !== 'img' || bmp.complete)) {
+      ctx.drawImage(bmp, it.x, it.y, it.w, it.h);
+    }
     if (it.type === 'card') {
-      // keep the card's natural layout and scale it, so resizing doesn't
-      // reflow the text (matches how the app scales its vector card)
+      const want = needsBake(it);
+      if (want) bakeCard(it, want);
+    }
+  }
+}
+
+/** The hidden layout element only needs its natural width; it is never seen. */
+function syncItems() {
+  for (const it of state.items) {
+    if (it.type === 'card') {
       ensureCardMetrics(it);
       it.el.style.width = it.nw + 'px';
-      it.el.style.transform =
-        `translate(${sx}px, ${sy}px) scale(${z * (it.w / it.nw)})`;
-    } else {
-      it.el.style.width = it.w + 'px';
-      it.el.style.height = it.h + 'px';
-      it.el.style.transform = `translate(${sx}px, ${sy}px) scale(${z})`;
     }
   }
 }
@@ -320,6 +328,149 @@ function syncItems() {
 function soloItem() {
   return (state.sel.strokes.length === 0 && state.sel.items.length === 1)
     ? state.sel.items[0] : null;
+}
+
+const CORNERS = ['nw', 'ne', 'sw', 'se'];
+
+function cornerPoint(item, c) {
+  return [
+    c === 'nw' || c === 'sw' ? item.x : item.x + item.w,
+    c === 'nw' || c === 'ne' ? item.y : item.y + item.h,
+  ];
+}
+
+function cornerHit(item, wx, wy) {
+  const tol = 9 / state.cam.z;
+  return CORNERS.find((c) => {
+    const [cx, cy] = cornerPoint(item, c);
+    return Math.abs(wx - cx) <= tol && Math.abs(wy - cy) <= tol;
+  });
+}
+
+function drawHandles(item) {
+  const s = 8 / state.cam.z;
+  ctx.save();
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#2f7cf6';
+  ctx.lineWidth = 1.5 / state.cam.z;
+  for (const c of CORNERS) {
+    const [cx, cy] = cornerPoint(item, c);
+    ctx.beginPath();
+    ctx.rect(cx - s / 2, cy - s / 2, s, s);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Aspect-locked corner drag, anchored at the opposite corner. */
+function resizedRect(start, corner, x, y) {
+  const ax = corner === 'nw' || corner === 'sw' ? start.x + start.w : start.x;
+  const ay = corner === 'nw' || corner === 'ne' ? start.y + start.h : start.y;
+  const aspect = start.w / start.h;
+  let w = Math.abs(x - ax), h = Math.abs(y - ay);
+  if (w / Math.max(h, 0.001) > aspect) h = w / aspect; else w = h * aspect;
+  const min = 24 / state.cam.z;
+  if (w < min) { w = min; h = w / aspect; }
+  return {
+    x: x < ax ? ax - w : ax,
+    y: y < ay ? ay - h : ay,
+    w, h,
+  };
+}
+
+/* ------------------------------------------------------- baking cards */
+
+/* Excalidraw is smooth because it paints text onto the canvas; a scaled DOM
+   node re-lays-out and re-rasterises on every pointer move. Cards are laid
+   out in a hidden element, baked once into a bitmap with the KaTeX fonts
+   embedded, and from then on drawn like any other image. */
+
+const BAKE_CAP = 4;          // don't bake finer than 4× board pixels
+let cardStylePromise = null;
+
+function cardStyleSheet() {
+  if (cardStylePromise) return cardStylePromise;
+  cardStylePromise = (async () => {
+    const base = new URL('vendor/', location.href);
+    let css = await fetch(new URL('katex.min.css', base)).then((r) => r.text());
+    // A bitmap is rendered in an isolated context, so the fonts have to
+    // travel with it — this is what the old export got wrong.
+    const refs = [...new Set([...css.matchAll(/url\(([^)]+\.woff2)\)/g)]
+      .map((m) => m[1].replace(/['"]/g, '')))];
+    await Promise.all(refs.map(async (ref) => {
+      try {
+        const buf = await fetch(new URL(ref, base)).then((r) => r.arrayBuffer());
+        let bin = '';
+        new Uint8Array(buf).forEach((b) => { bin += String.fromCharCode(b); });
+        css = css.split(ref).join('data:font/woff2;base64,' + btoa(bin));
+      } catch { /* leave the reference; the glyph falls back */ }
+    }));
+    return css + CARD_BITMAP_CSS;
+  })();
+  return cardStylePromise;
+}
+
+const CARD_BITMAP_CSS = `
+  .card {
+    box-sizing: border-box;
+    background: #fff; color: #111;
+    padding: 10px 14px;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+          "Helvetica Neue", Arial, sans-serif;
+  }
+  .card > :first-child { margin-top: 0 } .card > :last-child { margin-bottom: 0 }
+  .card h1 { font-size: 1.5em } .card h2 { font-size: 1.3em } .card h3 { font-size: 1.15em }
+  .card table { border-collapse: collapse; margin: 8px 0 }
+  .card th, .card td { border: 1px solid #c8c8c8; padding: 4px 10px }
+  .card th { background: #f2f2f2 }
+  .card code { background: #f2f2f2; padding: 1px 4px; border-radius: 3px; font-size: 13px }
+  .card blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid #ddd; color: #555 }
+`;
+
+/** Render a card to a bitmap at `scale` device pixels per board pixel. */
+async function bakeCard(item, scale) {
+  if (item.baking) return;
+  item.baking = true;
+  try {
+    const styles = await cardStyleSheet();
+    const w = Math.max(1, Math.round(item.nw));
+    const h = Math.max(1, Math.round(item.nh));
+    const body = item.el.innerHTML;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
+      + `<foreignObject width="100%" height="100%">`
+      + `<div xmlns="http://www.w3.org/1999/xhtml" class="card" style="width:${w}px">`
+      + `<style>${styles}</style>${body}</div></foreignObject></svg>`;
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.scale(scale, scale);
+    g.drawImage(img, 0, 0, w, h);
+    item.bmp = c;
+    item.bmpScale = scale;
+    draw();
+  } catch (e) {
+    reportError('card bake failed', e && (e.message || e));
+  } finally {
+    item.baking = false;
+  }
+}
+
+/** Bake, or re-bake when the board is zoomed in past what we have. */
+function needsBake(item) {
+  const dpr = window.devicePixelRatio || 1;
+  const want = Math.min(BAKE_CAP, (state.cam.z * (item.w / (item.nw || item.w))) * dpr);
+  if (!item.bmp) return Math.max(1, want);
+  return want > item.bmpScale * 1.4 ? Math.min(BAKE_CAP, want) : 0;
 }
 
 /* ---------------------------------------------------------------- items */
@@ -352,12 +503,19 @@ function buildCardEl(source) {
 }
 
 function buildImgEl(src) {
+  // a bare element keeps the item list uniform; the bitmap below is painted
   const el = document.createElement('div');
   el.className = 'item img';
-  const img = new Image();
-  img.src = src;
-  el.appendChild(img);
   return el;
+}
+
+/** Pasted images are painted straight from an Image object. */
+function attachImage(item) {
+  const img = new Image();
+  img.onload = () => draw();
+  img.src = item.src;
+  item.imgEl = img;
+  return item;
 }
 
 /** Natural size of a card in world units. The element carries no transform
@@ -391,6 +549,7 @@ const cardObserver = new ResizeObserver((entries) => {
     item.nh = h;
     item.w = w * scale;
     item.h = h * scale;
+    item.bmp = null;     // natural size moved, so the bitmap is stale
     changed = true;
   }
   if (changed) draw();
@@ -437,6 +596,7 @@ function addImage(src, w, h) {
     w: w * scale, h: h * scale,
     x: c[0] - (w * scale) / 2, y: c[1] - (h * scale) / 2, el,
   };
+  attachImage(item);
   state.items.push(item);
   state.sel = { strokes: [], items: [item] };
   draw();
@@ -515,6 +675,15 @@ ink.addEventListener('pointerdown', (e) => {
   // A selection only moves while the select tool is active — otherwise a
   // leftover selection swallows pen and eraser strokes.
   if (state.tool === 'select') {
+    const solo = soloItem();
+    if (solo) {
+      const corner = cornerHit(solo, x, y);
+      if (corner) {
+        pushUndo();
+        drag = { mode: 'resize', item: solo, corner, start: { ...solo } };
+        return;
+      }
+    }
     const sb = selectionBounds();
     if (sb && x >= sb.x - 6 && x <= sb.x + sb.w + 6 &&
         y >= sb.y - 6 && y <= sb.y + sb.h + 6) {
@@ -588,6 +757,13 @@ ink.addEventListener('pointermove', (e) => {
   if (!drag) return;
   const [x, y] = toWorld(px, py);
 
+  if (drag.mode === 'resize') {
+    const { item, corner, start } = drag;
+    Object.assign(item, resizedRect(start, corner, x, y));
+    draw();
+    return;
+  }
+
   if (drag.mode === 'move') {
     const dx = x - drag.last[0], dy = y - drag.last[1];
     state.sel.items.forEach((i) => { i.x += dx; i.y += dy; });
@@ -621,6 +797,14 @@ ink.addEventListener('pointermove', (e) => {
 
 function endDrag() {
   if (!drag) return;
+  if (drag.mode === 'resize') {
+    // a bigger card wants a finer bitmap
+    const want = needsBake(drag.item);
+    if (want) bakeCard(drag.item, want);
+    drag = null;
+    draw();
+    return;
+  }
   if (drag.mode === 'draw' && state.live) {
     const s = state.live;
     state.live = null;
@@ -789,6 +973,7 @@ function commitEditor() {
     target.source = src;
     const scale = target.w / (target.nw || target.w);
     const [w, h] = measureCard(el);
+    target.bmp = null;   // the source changed; the old bitmap is stale
     target.nw = w;
     target.nh = h;
     target.w = w * scale;
@@ -871,7 +1056,7 @@ function fromInkJSON(doc) {
       item = { ...base, type: 'card', source: im.source, el: buildCardEl(im.source) };
     } else {
       const src = 'data:image/png;base64,' + im.png;
-      item = { ...base, type: 'img', src, el: buildImgEl(src) };
+      item = attachImage({ ...base, type: 'img', src, el: buildImgEl(src) });
     }
     overlay.appendChild(item.el);
     state.items.push(item);
@@ -902,8 +1087,9 @@ function download(name, blob) {
 document.getElementById('saveBtn').onclick = async () => {
   // cards need a bitmap for the macOS app; rasterize them best-effort
   for (const it of state.items) {
-    if (it.type === 'card') it.png = await rasterize(it).catch(() => '');
-    else it.png = it.src;
+    if (it.type !== 'card') { it.png = it.src; continue; }
+    if (!it.bmp) await bakeCard(it, 2);
+    it.png = it.bmp ? it.bmp.toDataURL('image/png') : '';
   }
   download('board.ink', new Blob([JSON.stringify(toInkJSON())], { type: 'application/json' }));
 };
@@ -931,32 +1117,6 @@ document.getElementById('clearBtn').onclick = () => {
   draw();
 };
 
-/** Rasterize a card via SVG foreignObject (fonts fall back to the system). */
-async function rasterize(item) {
-  const clone = item.el.cloneNode(true);
-  clone.style.transform = 'none';
-  const html = new XMLSerializer().serializeToString(clone);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${item.w}" height="${item.h}">
-    <foreignObject width="100%" height="100%">
-      <div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff">${html}</div>
-    </foreignObject></svg>`;
-  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  const img = await new Promise((res, rej) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = url;
-  });
-  const c = document.createElement('canvas');
-  c.width = item.w * 2; c.height = item.h * 2;
-  const g = c.getContext('2d');
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, c.width, c.height);
-  g.scale(2, 2);
-  g.drawImage(img, 0, 0);
-  return c.toDataURL('image/png');
-}
-
 document.getElementById('pngBtn').onclick = async () => {
   const url = await exportPNGDataURL();
   if (!url) return;
@@ -981,12 +1141,9 @@ async function exportPNGDataURL() {
   g.translate(-b.x + pad, -b.y + pad);
 
   for (const it of state.items) {
-    const src = it.type === 'img' ? it.src : await rasterize(it).catch(() => null);
-    if (!src) continue;
-    const img = await new Promise((res) => {
-      const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src;
-    });
-    if (img) g.drawImage(img, it.x, it.y, it.w, it.h);
+    if (it.type === 'card' && !it.bmp) await bakeCard(it, 2);
+    const bmp = it.type === 'card' ? it.bmp : it.imgEl;
+    if (bmp) g.drawImage(bmp, it.x, it.y, it.w, it.h);
   }
   drawStrokesInto(g, state.strokes);
   return c.toDataURL('image/png');
@@ -1204,8 +1361,9 @@ function notifyDirty(value = true) {
 /** Cards live as HTML; rasterize them so saved files carry a bitmap too. */
 async function rasterizeCards() {
   for (const it of state.items) {
-    if (it.type === 'card') it.png = await rasterize(it).catch(() => '');
-    else it.png = it.src;
+    if (it.type !== 'card') { it.png = it.src; continue; }
+    if (!it.bmp) await bakeCard(it, 2);
+    it.png = it.bmp ? it.bmp.toDataURL('image/png') : '';
   }
 }
 
