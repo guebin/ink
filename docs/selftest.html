@@ -206,14 +206,26 @@ frame.addEventListener('load', async () => {
     return `${Math.round(bw)} → ${Math.round(aw)}`;
   });
 
-  await check('cards are baked to bitmaps', async () => {
+  await check('BAKE NUMBERS', async () => {
+    js(`addCard('sdfasdfasdf')`);
+    await new Promise((r) => setTimeout(r, 800));
+    const nw = js('state.items.at(-1).nw'), nh = js('state.items.at(-1).nh');
+    const iw = js('state.items.at(-1).w'), ih = js('state.items.at(-1).h');
+    const bw = js('state.items.at(-1).bmp ? state.items.at(-1).bmp.width : 0');
+    const bh = js('state.items.at(-1).bmp ? state.items.at(-1).bmp.height : 0');
+    const el = [...d.querySelectorAll('#overlay .item.card')].pop();
+    return `natural ${nw}x${nh} · shown ${Math.round(iw)}x${Math.round(ih)} · `
+      + `bitmap ${bw}x${bh} · element ${el.offsetWidth}x${el.offsetHeight}`;
+  });
+
+  await check('cards draw as vectors', async () => {
     await new Promise((r) => setTimeout(r, 600));
-    const baked = js('state.items.filter((i) => i.type === "card" && i.bmp).length');
+    const baked = js('state.items.filter((i) => i.type === "card" && i.svg).length');
     const cards = js('state.items.filter((i) => i.type === "card").length');
     if (!cards) throw new Error('no cards');
     if (baked !== cards) throw new Error(`${baked}/${cards} baked`);
     const px = js('state.items.find((i) => i.type === "card").bmp.width');
-    return `${baked} card, ${px}px wide bitmap`;
+    return `${baked} vector card, ${px}px drag bitmap`;
   });
 
   await check('save and reload', async () => {

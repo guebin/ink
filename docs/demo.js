@@ -302,15 +302,13 @@ function draw() {
 
 /** Cards and images are bitmaps now, so painting them is one drawImage. */
 function drawItems() {
+  const interacting = !!drag;   // dragging: favour speed over sharpness
   for (const it of state.items) {
-    const bmp = it.type === 'card' ? it.bmp : it.imgEl;
-    if (bmp && (it.type !== 'img' || bmp.complete)) {
-      ctx.drawImage(bmp, it.x, it.y, it.w, it.h);
-    }
-    if (it.type === 'card') {
-      const want = needsBake(it);
-      if (want) bakeCard(it, want);
-    }
+    let pic = null;
+    if (it.type === 'card') pic = (interacting && it.bmp) ? it.bmp : (it.svg || it.bmp);
+    else if (it.imgEl?.complete) pic = it.imgEl;
+    if (pic) ctx.drawImage(pic, it.x, it.y, it.w, it.h);
+    if (it.type === 'card' && !it.svg && !it.baking) bakeCard(it, 2);
   }
 }
 
@@ -428,7 +426,10 @@ const CARD_BITMAP_CSS = `
   .card blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid #ddd; color: #555 }
 `;
 
-/** Render a card to a bitmap at `scale` device pixels per board pixel. */
+/** Build the card's picture: an SVG image, which the canvas re-rasterises at
+    whatever size it is drawn — so a card stays sharp however far you zoom —
+    plus a flat bitmap used only while dragging, where re-rasterising every
+    frame is what made the old DOM cards lag. */
 async function bakeCard(item, scale) {
   if (item.baking) return;
   item.baking = true;
@@ -447,6 +448,7 @@ async function bakeCard(item, scale) {
       i.onerror = rej;
       i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     });
+    item.svg = img;          // vector: sharp at any size
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w * scale));
     c.height = Math.max(1, Math.round(h * scale));
@@ -465,10 +467,10 @@ async function bakeCard(item, scale) {
   }
 }
 
-/** Bake, or re-bake when the board is zoomed in past what we have. */
+/** The drag stand-in only needs to match the size it is shown at. */
 function needsBake(item) {
   const dpr = window.devicePixelRatio || 1;
-  const want = Math.min(BAKE_CAP, (state.cam.z * (item.w / (item.nw || item.w))) * dpr);
+  const want = Math.min(BAKE_CAP, state.cam.z * (item.w / (item.nw || item.w)) * dpr);
   if (!item.bmp) return Math.max(1, want);
   return want > item.bmpScale * 1.4 ? Math.min(BAKE_CAP, want) : 0;
 }
@@ -549,7 +551,8 @@ const cardObserver = new ResizeObserver((entries) => {
     item.nh = h;
     item.w = w * scale;
     item.h = h * scale;
-    item.bmp = null;     // natural size moved, so the bitmap is stale
+    item.bmp = null;     // natural size moved, so the picture is stale
+    item.svg = null;
     changed = true;
   }
   if (changed) draw();
@@ -973,7 +976,8 @@ function commitEditor() {
     target.source = src;
     const scale = target.w / (target.nw || target.w);
     const [w, h] = measureCard(el);
-    target.bmp = null;   // the source changed; the old bitmap is stale
+    target.bmp = null;   // the source changed; the old picture is stale
+    target.svg = null;
     target.nw = w;
     target.nh = h;
     target.w = w * scale;
