@@ -38,7 +38,7 @@ fi
 echo "▶ swift build…"
 swift build -c "$CONFIG" --product Ink
 
-echo "▶ assembling $APP…"
+echo "▶ assembling ${APP}…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/$CONFIG/Ink" "$APP/Contents/MacOS/Ink"
