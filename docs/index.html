@@ -6,7 +6,7 @@
 <title>Ink — infinite canvas board</title>
 <meta name="description" content="An infinite-canvas drawing board with Markdown and LaTeX cards. Try it in the browser, or download the macOS app.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="demo.css?v=7f2a04d">
+<link rel="stylesheet" href="demo.css?v=288119b">
 </head>
 <body>
 
@@ -58,14 +58,16 @@
   <div class="spacer"></div>
 
   <div class="seg files">
-    <!-- A disabled button gets no pointer events, so it never shows a tooltip;
-         the wrapper carries it instead. -->
-    <span class="locked" title="Get the macOS app to open .ink boards">
+    <!-- A disabled button takes no clicks and shows no tooltip, so the link
+         around it does both: its own tooltip, and somewhere to go. -->
+    <a class="locked" data-tip="Opening .ink boards is in the macOS app — get it"
+       href="https://github.com/guebin/ink" target="_blank" rel="noopener">
       <button id="openBtn" disabled>Open</button>
-    </span>
-    <span class="locked" title="Get the macOS app to save .ink boards">
+    </a>
+    <a class="locked" data-tip="Saving .ink boards is in the macOS app — get it"
+       href="https://github.com/guebin/ink" target="_blank" rel="noopener">
       <button id="saveBtn" disabled>Save</button>
-    </span>
+    </a>
     <button id="pngBtn" title="Export the board as PNG">PNG</button>
     <button id="clearBtn" title="Clear the board">Clear</button>
   </div>
@@ -137,6 +139,6 @@
 <script src="vendor/katex.min.js"></script>
 <script src="vendor/auto-render.min.js"></script>
 <script src="vendor/marked.min.js"></script>
-<script src="demo.js?v=7f2a04d"></script>
+<script src="demo.js?v=288119b"></script>
 </body>
 </html>

@@ -95,8 +95,31 @@ body { display: flex; flex-direction: column; }
 .seg.files button:hover { color: var(--text); }
 /* Open and Save read and write real .ink files; on the web they are shown so
    you know they exist, but they belong to the macOS app. */
-.seg.files .locked { display: inline-flex; cursor: help; }
-.seg.files button[disabled] { opacity: .38; cursor: help; pointer-events: none; }
+/* Our own tooltip: the browser's takes a second or so to appear, which read
+   as the button simply not working. */
+.seg.files .locked {
+  position: relative; display: inline-flex;
+  cursor: pointer; text-decoration: none;
+}
+.seg.files .locked::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 10px); right: 0;
+  padding: 7px 11px;
+  background: #0d0e10;
+  color: #f2f3f5;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+  z-index: 30;
+}
+.seg.files .locked:hover::after { opacity: 1; }
+.seg.files .locked:hover button[disabled] { opacity: .7; }
+.seg.files button[disabled] { opacity: .38; pointer-events: none; }
 
 .divider { width: 1px; height: 22px; background: var(--line); }
 
