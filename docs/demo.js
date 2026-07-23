@@ -281,8 +281,7 @@ function draw() {
     ctx.setLineDash([4 / state.cam.z, 4 / state.cam.z]);
     ctx.strokeRect(sel.x - 4, sel.y - 4, sel.w + 8, sel.h + 8);
     ctx.restore();
-    const solo = soloItem();
-    if (solo) drawHandles(solo);
+
   }
   if (state.marquee) {
     const m = state.marquee;
@@ -317,43 +316,10 @@ function syncItems() {
   }
 }
 
-/** The single selected item gets corner handles (screen-constant size). */
+/** The single selected item, when exactly one is picked. */
 function soloItem() {
   return (state.sel.strokes.length === 0 && state.sel.items.length === 1)
     ? state.sel.items[0] : null;
-}
-
-const CORNERS = ['nw', 'ne', 'sw', 'se'];
-
-function cornerPoint(item, c) {
-  return [
-    c === 'nw' || c === 'sw' ? item.x : item.x + item.w,
-    c === 'nw' || c === 'ne' ? item.y : item.y + item.h,
-  ];
-}
-
-function cornerHit(item, wx, wy) {
-  const tol = 9 / state.cam.z;
-  return CORNERS.find((c) => {
-    const [cx, cy] = cornerPoint(item, c);
-    return Math.abs(wx - cx) <= tol && Math.abs(wy - cy) <= tol;
-  });
-}
-
-function drawHandles(item) {
-  const s = 8 / state.cam.z;
-  ctx.save();
-  ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#2f7cf6';
-  ctx.lineWidth = 1.5 / state.cam.z;
-  for (const c of CORNERS) {
-    const [cx, cy] = cornerPoint(item, c);
-    ctx.beginPath();
-    ctx.rect(cx - s / 2, cy - s / 2, s, s);
-    ctx.fill();
-    ctx.stroke();
-  }
-  ctx.restore();
 }
 
 /* ---------------------------------------------------------------- items */
@@ -435,10 +401,9 @@ function trackCard(item) {
   cardObserver.observe(item.el);
 }
 
-/** A card resizes by scaling its natural layout, so it needs that natural
-    size recorded. Cards rebuilt from a file arrive with a display size only —
-    measure them, or a resize would stretch the selection box while the card
-    itself stayed put. */
+/** A card is drawn at its natural layout size and scaled to the size it is
+    shown at, so both are needed. Cards rebuilt from a file arrive with the
+    display size only. */
 function ensureCardMetrics(item) {
   if (item.type !== 'card' || (item.nw && item.nh)) return;
   const [w, h] = measureCard(item.el);
@@ -547,21 +512,9 @@ ink.addEventListener('pointerdown', (e) => {
 
   const tol = 6 / state.cam.z;
 
-  // A selection only accepts move/resize drags while the select tool is
-  // active — otherwise a leftover selection swallows pen and eraser strokes.
+  // A selection only moves while the select tool is active — otherwise a
+  // leftover selection swallows pen and eraser strokes.
   if (state.tool === 'select') {
-    const solo = soloItem();
-    if (solo) {
-      const corner = cornerHit(solo, x, y);
-      if (corner) {
-        pushUndo();
-        // one rasterisation for the whole drag, so the card keeps up with
-        // the box; cleared on release so the text sharpens again
-        solo.el.style.willChange = 'transform';
-        drag = { mode: 'resize', item: solo, corner, start: { ...solo } };
-        return;
-      }
-    }
     const sb = selectionBounds();
     if (sb && x >= sb.x - 6 && x <= sb.x + sb.w + 6 &&
         y >= sb.y - 6 && y <= sb.y + sb.h + 6) {
@@ -635,24 +588,6 @@ ink.addEventListener('pointermove', (e) => {
   if (!drag) return;
   const [x, y] = toWorld(px, py);
 
-  if (drag.mode === 'resize') {
-    const { item, corner, start } = drag;
-    // anchor the opposite corner, keep the aspect ratio
-    const ax = corner === 'nw' || corner === 'sw' ? start.x + start.w : start.x;
-    const ay = corner === 'nw' || corner === 'ne' ? start.y + start.h : start.y;
-    const aspect = start.w / start.h;
-    let w = Math.abs(x - ax), h = Math.abs(y - ay);
-    if (w / Math.max(h, 0.001) > aspect) h = w / aspect; else w = h * aspect;
-    const min = 24 / state.cam.z;
-    if (w < min) { w = min; h = w / aspect; }
-    item.w = w;
-    item.h = h;
-    item.x = x < ax ? ax - w : ax;
-    item.y = y < ay ? ay - h : ay;
-    draw();
-    return;
-  }
-
   if (drag.mode === 'move') {
     const dx = x - drag.last[0], dy = y - drag.last[1];
     state.sel.items.forEach((i) => { i.x += dx; i.y += dy; });
@@ -686,9 +621,6 @@ ink.addEventListener('pointermove', (e) => {
 
 function endDrag() {
   if (!drag) return;
-  if (drag.mode === 'resize' && drag.item) {
-    drag.item.el.style.willChange = '';   // back to sharp text
-  }
   if (drag.mode === 'draw' && state.live) {
     const s = state.live;
     state.live = null;

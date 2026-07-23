@@ -193,26 +193,6 @@ frame.addEventListener('load', async () => {
     return `${dw}×${dh}`;
   });
 
-  await check('resizing a card scales the card, not just the box', async () => {
-    js('setTool("select")');
-    // read numbers, not the live object — eval hands back a reference
-    const [bx, by, bw, bh] = ['x', 'y', 'w', 'h'].map((k) => js(`state.items.at(-1).${k}`));
-    const [cx, cy] = screenOf(bx + bw / 2, by + bh / 2);
-    send('pointerdown', cx, cy); send('pointerup', cx, cy);
-    const [hx, hy] = screenOf(bx + bw, by + bh);
-    drag(hx, hy, hx + bw, hy + bh);
-    await new Promise((r) => setTimeout(r, 150));
-
-    const aw = js('state.items.at(-1).w');
-    if (aw <= bw + 1) throw new Error(`box did not grow: ${bw} → ${aw}`);
-    const nodes = d.querySelectorAll('#overlay .item.card');
-    const shown = nodes[nodes.length - 1].getBoundingClientRect().width / js('state.cam.z');
-    if (Math.abs(shown - aw) > 2) {
-      throw new Error(`box ${Math.round(aw)} vs drawn ${Math.round(shown)}`);
-    }
-    return `${Math.round(bw)} → ${Math.round(aw)}, card follows`;
-  });
-
   await check('save and reload', async () => {
     const json = await w.inkNative.serialize();
     w.inkNative.load(json);
