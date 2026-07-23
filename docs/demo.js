@@ -401,6 +401,7 @@ function resizedRect(start, corner, x, y) {
    embedded, and from then on drawn like any other image. */
 
 const BAKE_CAP = 4;          // don't bake finer than 4× board pixels
+const CARD_MAX_W = 620;      // where a card starts wrapping
 let cardStylePromise = null;
 
 function cardStyleSheet() {
@@ -450,11 +451,14 @@ const CARD_BITMAP_CSS = `
 /** The stylesheet belongs to the <svg>, not inside the card: as a child of the
     card it was its own `:first-child`, so the rule that zeroes the first
     paragraph's top margin hit the <style> and the text sat an em too low. */
-function cardSVG(body, styles, w, h) {
+function cardSVG(body, styles, w, h, sizing) {
+  // `sizing` lets the card take its own width, up to the wrap limit, which is
+  // how its natural size is found before it is drawn at that size.
+  const style = sizing ? `width:max-content;max-width:${CARD_MAX_W}px` : `width:${w}px`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
     + `<style>${styles}</style>`
     + `<foreignObject width="100%" height="100%">`
-    + `<div xmlns="http://www.w3.org/1999/xhtml" class="card" style="width:${w}px">`
+    + `<div xmlns="http://www.w3.org/1999/xhtml" class="card" style="${style}">`
     + `${body}</div></foreignObject></svg>`;
 }
 
@@ -467,24 +471,30 @@ function loadSVG(svg) {
   });
 }
 
-/** How tall the card really came out inside the SVG. The page and the SVG are
-    separate documents, so a line can wrap in one and not the other; trusting
-    the page's measurement alone is what cut the bottom off long cards. The
-    card paints itself white, so the last row it painted is its height. */
-function svgCardHeight(img, w, guess) {
+/** The size the card really came out at inside the SVG. The page and the SVG
+    are separate documents and don't wrap text identically, so the page's
+    measurement is only a starting guess — believing it cut long cards off at
+    the bottom and folded short ones onto two lines. The card paints itself
+    white, so the last row and column it painted are its size. */
+function svgCardBounds(img, w, h) {
   const c = document.createElement('canvas');
-  c.width = Math.max(1, w);
-  c.height = Math.max(1, guess);
+  c.width = Math.max(1, Math.round(w));
+  c.height = Math.max(1, Math.round(h));
   const g = c.getContext('2d');
-  g.drawImage(img, 0, 0, w, guess);
+  g.drawImage(img, 0, 0, c.width, c.height);
   const px = g.getImageData(0, 0, c.width, c.height).data;
-  for (let y = c.height - 1; y >= 0; y--) {
+  let right = 0, bottom = 0;
+  for (let y = 0; y < c.height; y++) {
     const row = y * c.width * 4;
-    for (let x = 0; x < c.width; x++) {
-      if (px[row + x * 4 + 3] > 8) return y + 1;
+    for (let x = c.width - 1; x >= 0; x--) {
+      if (px[row + x * 4 + 3] > 8) {
+        if (x + 1 > right) right = x + 1;
+        bottom = y + 1;
+        break;
+      }
     }
   }
-  return 0;
+  return [right, bottom];
 }
 
 async function bakeCard(item, scale) {
@@ -492,19 +502,34 @@ async function bakeCard(item, scale) {
   item.baking = true;
   try {
     const styles = await cardStyleSheet();
-    const w = Math.max(1, Math.round(item.nw));
+    let w = Math.max(1, Math.round(item.nw));
     let h = Math.max(1, Math.round(item.nh));
     const body = item.el.innerHTML;
-    let img = await loadSVG(cardSVG(body, styles, w, h * 3 + 200));
-    const real = svgCardHeight(img, w, h * 3 + 200);
-    if (real && Math.abs(real - h) > 1) {
+
+    // Let the card lay itself out on a sheet big enough to hold it and read
+    // back the width it wanted; then measure the height at that width, since
+    // fixing the width is what the drawn card will actually get.
+    const roomW = CARD_MAX_W + 40, roomH = h * 3 + 400;
+    const wide = await loadSVG(cardSVG(body, styles, roomW, roomH, true));
+    const [painted] = svgCardBounds(wide, roomW, roomH);
+    // Whole pixels only, so the last fraction of the widest line is lost —
+    // hand it back, or that line wraps when the width is pinned.
+    const realW = painted ? painted + 1 : 0;
+    const tall = realW
+      ? await loadSVG(cardSVG(body, styles, realW, roomH))
+      : null;
+    const [, realH] = tall ? svgCardBounds(tall, realW, roomH) : [0, 0];
+    if (realW && realH && (Math.abs(realW - w) > 1 || Math.abs(realH - h) > 1)) {
       // Keep any resize the user has applied while the natural size moves.
-      const k = item.nh ? item.h / item.nh : 1;
-      item.nh = real;
-      item.h = real * k;
-      h = real;
+      const kw = item.nw ? item.w / item.nw : 1;
+      const kh = item.nh ? item.h / item.nh : 1;
+      item.nw = w = realW;
+      item.nh = h = realH;
+      item.w = realW * kw;
+      item.h = realH * kh;
     }
-    img = await loadSVG(cardSVG(body, styles, w, h));
+
+    const img = await loadSVG(cardSVG(body, styles, w, h));
     item.svg = img;          // vector: sharp at any size
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w * scale));
@@ -583,7 +608,7 @@ function attachImage(item) {
 function measureCard(el) {
   el.style.transform = 'none';
   el.style.width = 'max-content';
-  el.style.maxWidth = '620px';
+  el.style.maxWidth = CARD_MAX_W + 'px';
   const w = Math.ceil(el.offsetWidth) || 320;
   const h = Math.ceil(el.offsetHeight) || 120;
   el.style.maxWidth = 'none';
@@ -1067,10 +1092,95 @@ srcBox.addEventListener('keydown', (e) => {
 
 /* ------------------------------------------------------------- clipboard */
 
+/** Board objects go on the system clipboard as tagged text, so a copy travels
+    between windows and between the app and the browser. The copy kept here is
+    the fallback for when the clipboard can't be read back. */
+const CLIP_TAG = 'ink-board-v1:';
+const PASTE_OFFSET = 16;      // world units, so a paste doesn't hide the original
+let objClipboard = null;
+
+/** Drop whatever is selected. The caller decides whether it is one undo step. */
+function deleteSelection() {
+  if (!state.sel.strokes.length && !state.sel.items.length) return false;
+  state.strokes = state.strokes.filter((s) => !state.sel.strokes.includes(s));
+  state.sel.items.forEach((i) => i.el.remove());
+  state.items = state.items.filter((i) => !state.sel.items.includes(i));
+  state.sel = { strokes: [], items: [] };
+  return true;
+}
+
+function selectionAsClip() {
+  const { strokes, items } = state.sel;
+  if (!strokes.length && !items.length) return null;
+  return CLIP_TAG + JSON.stringify({
+    strokes: strokes.map((s) => ({ ...s, pts: s.pts.map((p) => [...p]) })),
+    items: items.map(({ el, svg, bmp, bmpScale, baking, imgEl, ...rest }) => rest),
+  });
+}
+
+/** Put the copied objects back, nudged clear of the originals and selected so
+    they can be dragged straight away. Returns false if the text wasn't ours. */
+function pasteClip(text) {
+  if (!text?.startsWith(CLIP_TAG)) return false;
+  let data;
+  try { data = JSON.parse(text.slice(CLIP_TAG.length)); } catch { return false; }
+  if (!data.strokes?.length && !data.items?.length) return false;
+
+  pushUndo();
+  const d = PASTE_OFFSET;
+  const strokes = (data.strokes || []).map((s) => ({
+    ...s, pts: s.pts.map(([x, y]) => [x + d, y + d]),
+  }));
+  strokes.forEach((s) => state.strokes.push(s));
+
+  const items = (data.items || []).map((it) => {
+    const item = { ...it, id: nextId++, x: it.x + d, y: it.y + d };
+    item.el = it.type === 'card' ? buildCardEl(it.source) : buildImgEl(it.src);
+    overlay.appendChild(item.el);
+    state.items.push(item);
+    if (item.type === 'card') trackCard(item);   // it already knows its size
+    else attachImage(item);
+    return item;
+  });
+
+  setTool('select');
+  state.sel = { strokes, items };
+  syncItems();
+  draw();
+  return true;
+}
+
+document.addEventListener('copy', (e) => {
+  if (!modal.hidden) return;          // the editor's own text copy
+  const clip = selectionAsClip();
+  if (!clip) return;
+  objClipboard = clip;
+  e.clipboardData?.setData('text/plain', clip);
+  e.preventDefault();
+});
+
+document.addEventListener('cut', (e) => {
+  if (!modal.hidden) return;
+  const clip = selectionAsClip();
+  if (!clip) return;
+  objClipboard = clip;
+  e.clipboardData?.setData('text/plain', clip);
+  e.preventDefault();
+  pushUndo();
+  deleteSelection();
+  draw();
+});
+
 document.addEventListener('paste', (e) => {
+  if (!modal.hidden) return;
   const file = [...(e.clipboardData?.items || [])]
     .find((i) => i.type.startsWith('image/'))?.getAsFile();
-  if (!file) return;
+  if (!file) {
+    // A screenshot always wins; board objects are what's left.
+    const text = e.clipboardData?.getData('text/plain');
+    if (pasteClip(text) || pasteClip(objClipboard)) e.preventDefault();
+    return;
+  }
   e.preventDefault();
   const reader = new FileReader();
   reader.onload = () => {
@@ -1381,11 +1491,8 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Backspace' || e.code === 'Delete') {
     e.preventDefault();
     pushUndo();
-    if (state.sel.strokes.length || state.sel.items.length) {
-      state.strokes = state.strokes.filter((s) => !state.sel.strokes.includes(s));
-      state.sel.items.forEach((i) => i.el.remove());
-      state.items = state.items.filter((i) => !state.sel.items.includes(i));
-      state.sel = { strokes: [], items: [] };
+    if (deleteSelection()) {
+      /* handled */
     } else if (state.items.length || state.strokes.length) {
       // nothing selected: peel off the most recent object
       const lastItem = state.items[state.items.length - 1];
