@@ -985,11 +985,8 @@ function closeEditor() { modal.hidden = true; editing = null; editorAnchor = nul
 
 /* Formatting buttons: wrap the selection, or drop in a snippet. */
 const MD_SNIPPETS = {
-  h: { before: '## ', after: '', placeholder: 'Heading', line: true },
   b: { before: '**', after: '**', placeholder: 'bold' },
   i: { before: '*', after: '*', placeholder: 'italic' },
-  code: { before: '`', after: '`', placeholder: 'code' },
-  list: { before: '- ', after: '', placeholder: 'item', line: true },
   table: { block: '| a | b |\n|---|---|\n| 1 | 2 |' },
   imath: { before: '$', after: '$', placeholder: 'x^2' },
   dmath: { block: '$$\nx = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\n$$' },
@@ -1022,7 +1019,10 @@ document.getElementById('mdbar')?.addEventListener('click', (e) => {
     srcBox.selectionEnd = srcBox.selectionStart + selected.length;
   }
   srcBox.focus();
+  // Setting .value in script fires no input event, so the button that watches
+  // for one has to be told: text put here by a formatting button counts.
   renderPreview();
+  syncInsertButton();
 });
 
 function commitEditor() {
