@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Ink — infinite canvas board</title>
+<meta name="description" content="An infinite-canvas drawing board with Markdown and LaTeX cards. Try it in the browser, or download the macOS app.">
+<link rel="stylesheet" href="vendor/katex.min.css">
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="brand">Ink</span>
+  <span class="tagline">An infinite canvas for handwriting, screenshots and math — right in the browser</span>
+  <nav>
+    <a class="btn ghost" href="https://github.com/guebin/ink" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn" href="https://github.com/guebin/ink#install-macos"
+       target="_blank" rel="noopener">Get the macOS app</a>
+  </nav>
+</header>
+
+<div class="toolbar" id="toolbar">
+  <div class="seg" id="tools">
+    <button data-tool="select" class="on" title="Select (1 · V) — click or drag objects, drag empty space to lasso">
+      <svg viewBox="0 0 20 20"><path d="M4 2 L15 10 L10 11 L12.5 16 L10.5 17 L8 12 L4.5 15 Z"/></svg>
+    </button>
+    <button data-tool="ink" title="Pen / Highlighter (2) — press again to switch (P: pen, H: highlighter)">
+      <svg viewBox="0 0 20 20" class="stroke"><path d="M3 17 L6 16 L17 5 L15 3 L4 14 Z"/><path d="M14 4 L16 6"/></svg>
+    </button>
+    <button data-tool="eraser" title="Eraser (3 · E) — removes whole strokes">
+      <svg viewBox="0 0 20 20" class="stroke"><path d="M7 16 L3 12 L11 4 L17 10 L11 16 Z"/><path d="M7 16 L17 16"/></svg>
+    </button>
+    <button data-tool="text" title="Text (4 · T) — Markdown · $math$ · tables">
+      <b>Aa</b>
+    </button>
+    <button data-tool="line" title="Line (5 · L)">
+      <svg viewBox="0 0 20 20" class="stroke"><path d="M4 16 L16 4"/></svg>
+    </button>
+    <button data-tool="rect" title="Rectangle (6 · R)">
+      <svg viewBox="0 0 20 20" class="stroke"><rect x="3.5" y="5.5" width="13" height="9" rx="1.5"/></svg>
+    </button>
+  </div>
+
+  <div class="divider"></div>
+  <div class="dots" id="dots"></div>
+
+  <div class="divider"></div>
+  <span class="sizedot" id="sizedot"></span>
+  <input type="range" id="size" min="1" max="24" value="3" title="Stroke size">
+
+  <div class="spacer"></div>
+
+  <div class="seg files">
+    <button id="openBtn" title="Open a .ink board">Open</button>
+    <button id="saveBtn" title="Save as .ink — opens in the macOS app too">Save</button>
+    <button id="pngBtn" title="Export the board as PNG">PNG</button>
+    <button id="clearBtn" title="Clear the board">Clear</button>
+  </div>
+  <select id="zoom" title="Zoom (⌘/Ctrl + scroll)">
+    <option value="0.5">50%</option>
+    <option value="1" selected>100%</option>
+    <option value="2">200%</option>
+    <option value="4">400%</option>
+    <option value="fit">Fit</option>
+  </select>
+</div>
+
+<main id="stage">
+  <canvas id="bg"></canvas>
+  <div id="overlay"></div>
+  <canvas id="ink"></canvas>
+  <div id="hint">
+    Draw with the pen · scroll to pan · ⌘/Ctrl+scroll to zoom · <b>Aa</b> for math · ⌘V to paste a screenshot
+  </div>
+</main>
+
+<div id="modal" class="modal" hidden>
+  <div class="sheet">
+    <div class="sheet-head">
+      <h3 id="editorTitle">Insert text</h3>
+      <div class="mdbar" id="mdbar">
+        <button data-md="h" title="Heading">
+          <svg viewBox="0 0 24 24"><path d="M5 5v14M15 5v14M5 12h10" class="s"/><text x="18" y="19">1</text></svg>
+        </button>
+        <button data-md="b" title="Bold (⌘B)"><span class="g" style="font-weight:800">B</span></button>
+        <button data-md="i" title="Italic (⌘I)"><span class="g" style="font-style:italic;font-family:Georgia,serif">I</span></button>
+        <button data-md="code" title="Code"><span class="g" style="font-family:ui-monospace,Menlo,monospace">&lt;/&gt;</span></button>
+        <button data-md="list" title="List">
+          <svg viewBox="0 0 24 24">
+            <circle cx="5" cy="7" r="1.7" class="f"/><circle cx="5" cy="12" r="1.7" class="f"/><circle cx="5" cy="17" r="1.7" class="f"/>
+            <path d="M10 7h10M10 12h10M10 17h10" class="s"/>
+          </svg>
+        </button>
+        <button data-md="table" title="Table">
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="5" width="18" height="14" rx="1.5" class="s"/>
+            <path d="M3 10h18M9 10v9M15 10v9" class="s"/>
+          </svg>
+        </button>
+        <button data-md="imath" title="Inline math"><span class="g math">$x$</span></button>
+        <button data-md="dmath" title="Display math">
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="5" width="18" height="14" rx="1.5" class="s dashed"/>
+            <text x="12" y="16" class="mid">$$</text>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="editor">
+      <textarea id="src" spellcheck="false" placeholder="Write in Markdown."></textarea>
+      <div class="preview-wrap">
+        <div class="preview-label">Preview</div>
+        <div id="preview" class="preview"></div>
+      </div>
+    </div>
+    <div class="row">
+      <span class="sub">⌘↩ to insert · Esc to cancel</span>
+      <span class="spacer"></span>
+      <button id="cancelBtn" class="btn ghost">Cancel</button>
+      <button id="insertBtn" class="btn">Insert</button>
+    </div>
+  </div>
+</div>
+
+<footer class="foot">
+  This is the web version of <a href="https://github.com/guebin/ink">Ink</a>, a macOS app.
+  Boards you save as <code>.ink</code> open in either one.
+</footer>
+
+<input type="file" id="file" accept=".ink,application/json" hidden>
+
+<script src="vendor/katex.min.js"></script>
+<script src="vendor/auto-render.min.js"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="demo.js"></script>
+</body>
+</html>

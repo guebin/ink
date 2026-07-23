@@ -1,0 +1,9 @@
+.build/
+Paint.app/
+.DS_Store
+mov/
+Ink.app/
+dist/
+.venv
+err/
+
