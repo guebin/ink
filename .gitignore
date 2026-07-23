@@ -6,6 +6,11 @@ Ink.app/
 dist/
 .venv
 err/
+.claude/
+
+# Working screenshots kept on disk; the repo publishes only docs/install.png.
+/tip2.png
+/tip2c.png
 
 
 # The old Paint app stays on disk here, but is not part of the repo.
