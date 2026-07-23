@@ -137,7 +137,9 @@ function snapshot() {
     strokes: state.strokes,
     // The pictures can't survive JSON — an Image or a canvas comes back as
     // `{}`, and drawing that throws. They're rebuilt from the source anyway.
-    items: state.items.map(({ el, svg, bmp, bmpScale, baking, imgEl, ...rest }) => rest),
+    // `png` goes too: it is a save-time copy of the picture that the write
+    // path recomputes every time, so keeping it only doubles the snapshot.
+    items: state.items.map(({ el, svg, bmp, bmpScale, baking, imgEl, png, ...rest }) => rest),
   });
 }
 
@@ -1161,7 +1163,7 @@ function selectionAsClip() {
   if (!strokes.length && !items.length) return null;
   return CLIP_TAG + JSON.stringify({
     strokes: strokes.map((s) => ({ ...s, pts: s.pts.map((p) => [...p]) })),
-    items: items.map(({ el, svg, bmp, bmpScale, baking, imgEl, ...rest }) => rest),
+    items: items.map(({ el, svg, bmp, bmpScale, baking, imgEl, png, ...rest }) => rest),
   });
 }
 
