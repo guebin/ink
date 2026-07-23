@@ -500,9 +500,18 @@ function svgCardBounds(img, w, h) {
   return [right, bottom];
 }
 
-async function bakeCard(item, scale) {
-  if (item.baking) return;
-  item.baking = true;
+/** An `async` early return hands back an already-resolved promise, so a caller
+    awaiting a bake that was already in flight carried on before the picture
+    existed — and the PNG export then left the card out. Hand back the bake
+    itself, so awaiting one means what it says. `baking` doubles as the guard
+    and the handle; it is stripped from snapshots either way. */
+function bakeCard(item, scale) {
+  if (item.baking) return item.baking;
+  item.baking = bakeCardNow(item, scale).finally(() => { item.baking = false; });
+  return item.baking;
+}
+
+async function bakeCardNow(item, scale) {
   try {
     const styles = await cardStyleSheet();
     let w = Math.max(1, Math.round(item.nw));
@@ -551,8 +560,6 @@ async function bakeCard(item, scale) {
     draw();
   } catch (e) {
     reportError('card bake failed', e && (e.message || e));
-  } finally {
-    item.baking = false;
   }
 }
 
