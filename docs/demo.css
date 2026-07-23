@@ -18,7 +18,16 @@ html, body {
   color: var(--text);
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
         "Pretendard", "Segoe UI", sans-serif;
+  /* iOS inflates text inside wide blocks, which blew the measuring overlay's
+     cards up to several times their size. Card sizes are ours to decide. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
+
+/* Dragging on a board shouldn't sweep the page into a text selection —
+   on a touch screen that is what "everything went blue" was. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#src, .preview { -webkit-user-select: text; user-select: text; }
 
 body { display: flex; flex-direction: column; }
 
@@ -137,7 +146,12 @@ body { display: flex; flex-direction: column; }
 #stage { position: relative; flex: 1; overflow: hidden; background: #fff; }
 #bg, #ink { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Cards are laid out here to be measured and baked, never shown. */
-#overlay { position: absolute; top: 0; left: -100000px; width: 4000px; visibility: hidden; }
+/* Only ever as wide as a card may be — a 4000px block is exactly what made
+   iOS decide the text inside needed enlarging. */
+#overlay {
+  position: absolute; top: 0; left: -100000px;
+  width: 700px; visibility: hidden; pointer-events: none;
+}
 #ink { touch-action: none; }
 
 .item {
