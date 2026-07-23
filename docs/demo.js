@@ -555,6 +555,9 @@ ink.addEventListener('pointerdown', (e) => {
       const corner = cornerHit(solo, x, y);
       if (corner) {
         pushUndo();
+        // one rasterisation for the whole drag, so the card keeps up with
+        // the box; cleared on release so the text sharpens again
+        solo.el.style.willChange = 'transform';
         drag = { mode: 'resize', item: solo, corner, start: { ...solo } };
         return;
       }
@@ -683,6 +686,9 @@ ink.addEventListener('pointermove', (e) => {
 
 function endDrag() {
   if (!drag) return;
+  if (drag.mode === 'resize' && drag.item) {
+    drag.item.el.style.willChange = '';   // back to sharp text
+  }
   if (drag.mode === 'draw' && state.live) {
     const s = state.live;
     state.live = null;

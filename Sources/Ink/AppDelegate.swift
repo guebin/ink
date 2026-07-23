@@ -116,11 +116,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
             return
         }
+        // `Ink --drag-test board.ink` drives a corner resize inside the real
+        // app bundle, so the shipped board code is what gets exercised.
+        if let i = args.firstIndex(of: "--drag-test"), args.count > i + 1 {
+            load(url: URL(fileURLWithPath: args[i + 1]))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [self] in
+                self.board(Self.dragTestScript) { value in
+                    print("DRAG TEST: \(value ?? "no result")")
+                    exit(0)
+                }
+            }
+            return
+        }
         if let pending = pendingOpenURL {
             pendingOpenURL = nil
             load(url: pending)
         }
     }
+
+    /// Select the last card, drag its bottom-right handle out, and report
+    /// whether the drawn card grew along with the selection box.
+    private static let dragTestScript = """
+    const item = state.items.at(-1);
+    if (!item) return 'no card on the board';
+    const canvas = document.getElementById('ink');
+    const r = canvas.getBoundingClientRect();
+    const screenOf = (wx, wy) => [
+      (wx - state.cam.x) * state.cam.z + r.left,
+      (wy - state.cam.y) * state.cam.z + r.top,
+    ];
+    const send = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, {
+      pointerId: 1, bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0,
+    }));
+    setTool('select');
+    const before = { x: item.x, y: item.y, w: item.w, h: item.h };
+    const [cx, cy] = screenOf(before.x + before.w / 2, before.y + before.h / 2);
+    send('pointerdown', cx, cy); send('pointerup', cx, cy);
+    const [hx, hy] = screenOf(before.x + before.w, before.y + before.h);
+    send('pointerdown', hx, hy);
+    send('pointermove', hx + before.w / 2, hy + before.h / 2);
+    send('pointermove', hx + before.w, hy + before.h);
+    send('pointerup', hx + before.w, hy + before.h);
+    const after = state.items.at(-1);
+    const node = [...document.querySelectorAll('#overlay .item.card')].pop();
+    const drawn = node ? node.getBoundingClientRect().width / state.cam.z : 0;
+    return `box ${Math.round(before.w)} -> ${Math.round(after.w)}, drawn ${Math.round(drawn)}`;
+    """
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
