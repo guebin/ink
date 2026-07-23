@@ -82,6 +82,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webReady = true
+        // `Ink --export-test board.ink out.png` exercises the snapshot export
+        // without a save panel, so it can be checked from a script.
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--export-test"), args.count > i + 2 {
+            let board = URL(fileURLWithPath: args[i + 1])
+            let out = URL(fileURLWithPath: args[i + 2])
+            load(url: board)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [self] in
+                self.board("return inkNative.prepareSnapshot()") { value in
+                    guard let r = value as? [String: Any],
+                          let x = (r["x"] as? NSNumber)?.doubleValue,
+                          let y = (r["y"] as? NSNumber)?.doubleValue,
+                          let w = (r["w"] as? NSNumber)?.doubleValue,
+                          let h = (r["h"] as? NSNumber)?.doubleValue else {
+                        print("EXPORT TEST: empty board"); exit(1)
+                    }
+                    let config = WKSnapshotConfiguration()
+                    config.rect = CGRect(x: x, y: y, width: w, height: h)
+                    self.web.takeSnapshot(with: config) { image, error in
+                        guard let image,
+                              let tiff = image.tiffRepresentation,
+                              let rep = NSBitmapImageRep(data: tiff),
+                              let data = rep.representation(using: .png, properties: [:]) else {
+                            print("EXPORT TEST failed: \(error?.localizedDescription ?? "no image")")
+                            exit(1)
+                        }
+                        try? data.write(to: out)
+                        print("EXPORT TEST: \(rep.pixelsWide)x\(rep.pixelsHigh), \(data.count) bytes")
+                        exit(0)
+                    }
+                }
+            }
+            return
+        }
         if let pending = pendingOpenURL {
             pendingOpenURL = nil
             load(url: pending)
@@ -206,19 +240,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
+    /// Photograph the web view rather than re-drawing the board: what the
+    /// snapshot carries is exactly what's on screen, fonts and KaTeX layout
+    /// included, which a canvas re-draw only approximates.
     @objc private func exportPNG(_ sender: Any?) {
-        board("return await inkNative.exportPNG()") { [weak self] value in
-            guard let self,
-                  let dataURL = value as? String,
-                  let comma = dataURL.firstIndex(of: ","),
-                  let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
-            else { NSSound.beep(); return }
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.png]
-            panel.nameFieldStringValue =
-                (self.documentURL?.deletingPathExtension().lastPathComponent ?? "Ink") + ".png"
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            try? data.write(to: url)
+        board("return inkNative.prepareSnapshot()") { [weak self] value in
+            guard let self else { return }
+            // nil means the board is empty — nothing to photograph
+            guard let r = value as? [String: Any],
+                  let x = (r["x"] as? NSNumber)?.doubleValue,
+                  let y = (r["y"] as? NSNumber)?.doubleValue,
+                  let w = (r["w"] as? NSNumber)?.doubleValue,
+                  let h = (r["h"] as? NSNumber)?.doubleValue, w > 1, h > 1
+            else {
+                self.board("return inkNative.endSnapshot()")
+                NSSound.beep()
+                return
+            }
+            let config = WKSnapshotConfiguration()
+            config.rect = CGRect(x: x, y: y, width: w, height: h)
+            self.web.takeSnapshot(with: config) { image, _ in
+                self.board("return inkNative.endSnapshot()")
+                guard let image,
+                      let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let data = rep.representation(using: .png, properties: [:])
+                else { NSSound.beep(); return }
+                let panel = NSSavePanel()
+                panel.allowedContentTypes = [.png]
+                panel.nameFieldStringValue =
+                    (self.documentURL?.deletingPathExtension().lastPathComponent ?? "Ink") + ".png"
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                do {
+                    try data.write(to: url)
+                    NSLog("Ink exported %d bytes to %@", data.count, url.path)
+                } catch {
+                    NSLog("Ink export failed: %@", error.localizedDescription)
+                    NSSound.beep()
+                }
+            }
         }
     }
 

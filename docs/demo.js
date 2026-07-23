@@ -189,6 +189,7 @@ function drawGrid() {
   bgx.clearRect(0, 0, w, h);
   bgx.fillStyle = '#fff';
   bgx.fillRect(0, 0, w, h);
+  if (snapshotCam) return;   // exported images get plain paper, no grid
 
   let spacing = 40;
   while (spacing * state.cam.z < 22) spacing *= 2;
@@ -844,6 +845,8 @@ function commitEditor() {
   } else {
     addCard(src, at);
   }
+  // the card arrives selected, so hand over the tool that can move it
+  setTool('select');
 }
 
 document.getElementById('insertBtn').onclick = commitEditor;
@@ -1283,7 +1286,42 @@ window.inkNative = {
   zoomBy(f) { setZoom(state.cam.z * f); return true; },
   zoomToFit() { zoomToFit(); return true; },
   async exportPNG() { return exportPNGDataURL(); },
+
+  /* The app exports by photographing the web view, so the PNG carries the
+     real fonts and KaTeX layout instead of a re-drawn approximation. Fit the
+     board, drop the selection chrome, and hand back the rectangle to shoot
+     (page coordinates, since that is what the snapshot API wants). */
+  prepareSnapshot() {
+    snapshotCam = { ...state.cam };   // also tells drawGrid to stay off
+    state.sel = { strokes: [], items: [] };
+    state.marquee = null;
+    zoomToFit();
+    const b = contentBounds();
+    if (!b) { draw(); return null; }
+    const r = stage.getBoundingClientRect();
+    const pad = 24;
+    const x = (b.x - state.cam.x) * state.cam.z + r.left - pad;
+    const y = (b.y - state.cam.y) * state.cam.z + r.top - pad;
+    return {
+      x: Math.max(r.left, x),
+      y: Math.max(r.top, y),
+      w: Math.min(r.width, b.w * state.cam.z + pad * 2),
+      h: Math.min(r.height, b.h * state.cam.z + pad * 2),
+    };
+  },
+
+  endSnapshot() {
+    if (snapshotCam) {
+      state.cam = snapshotCam;
+      snapshotCam = null;
+      syncZoomUI();
+      draw();
+    }
+    return true;
+  },
 };
+
+let snapshotCam = null;
 
 /* ----------------------------------------------------------------- boot */
 
