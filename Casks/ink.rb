@@ -2,13 +2,14 @@ cask "ink" do
   version "1.0.0"
   sha256 "f42551caeab7d4f6fefcc56a86531a7029225dcc8300e51ac7ab9b19e6bde513"
 
-  url "https://github.com/guebin/ink/releases/latest/download/Ink.dmg",
+  url "https://github.com/guebin/ink/releases/download/v#{version}/Ink.dmg",
       verified: "github.com/guebin/ink/"
   name "Ink"
   desc "Infinite-canvas drawing board with Markdown and LaTeX cards"
   homepage "https://github.com/guebin/ink"
 
   depends_on macos: :monterey
+  depends_on arch: :arm64
 
   app "Ink.app"
 
