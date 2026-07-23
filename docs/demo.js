@@ -321,7 +321,9 @@ function drawItems() {
   const interacting = !!drag;   // dragging: favour speed over sharpness
   for (const it of state.items) {
     let pic = null;
-    if (it.type === 'card') pic = (interacting && it.bmp) ? it.bmp : (it.svg || it.bmp);
+    if (it.type === 'card') {
+      pic = (interacting && !bmpTooCoarse(it)) ? it.bmp : (it.svg || it.bmp);
+    }
     else if (it.imgEl?.complete) pic = it.imgEl;
     if (pic) ctx.drawImage(pic, it.x, it.y, it.w, it.h);
     if (it.type === 'card' && !it.svg && !it.baking) bakeCard(it, 2);
@@ -400,7 +402,8 @@ function resizedRect(start, corner, x, y) {
    out in a hidden element, baked once into a bitmap with the KaTeX fonts
    embedded, and from then on drawn like any other image. */
 
-const BAKE_CAP = 4;          // don't bake finer than 4× board pixels
+const BAKE_CAP = 12;             // never finer than 12× the card's own size
+const BAKE_MAX_PIXELS = 4e6;     // and never a bigger stand-in than this
 const CARD_MAX_W = 620;      // where a card starts wrapping
 let cardStylePromise = null;
 
@@ -549,12 +552,45 @@ async function bakeCard(item, scale) {
   }
 }
 
-/** The drag stand-in only needs to match the size it is shown at. */
-function needsBake(item) {
+/** How fine a stand-in would have to be to match the size it is drawn at,
+    and how fine we're willing to bake one. */
+function rawScale(item) {
   const dpr = window.devicePixelRatio || 1;
-  const want = Math.min(BAKE_CAP, state.cam.z * (item.w / (item.nw || item.w)) * dpr);
-  if (!item.bmp) return Math.max(1, want);
-  return want > item.bmpScale * 1.4 ? Math.min(BAKE_CAP, want) : 0;
+  return Math.max(1, state.cam.z * (item.w / (item.nw || item.w)) * dpr);
+}
+/** Bake as fine as the card is actually drawn, as long as the stand-in stays
+    a sane size — a matching stand-in is what keeps a drag both smooth and
+    sharp, so the ceiling is a memory budget rather than a flat multiple. */
+function wantScale(item) {
+  const area = Math.max(1, (item.nw || 1) * (item.nh || 1));
+  return Math.min(BAKE_CAP, Math.sqrt(BAKE_MAX_PIXELS / area), rawScale(item));
+}
+
+function needsBake(item) {
+  const want = wantScale(item);
+  if (!item.bmp) return want;
+  return want > item.bmpScale * 1.4 ? want : 0;
+}
+
+/** A stand-in coarser than the size it is drawn at is exactly what made a
+    card go soft for a moment. Until a fine enough one exists, stay vector. */
+function bmpTooCoarse(item) {
+  // Measured against the real need, not the bake ceiling: past the ceiling
+  // there is no stand-in good enough, so a drag stays vector.
+  return !item.bmp || item.bmpScale < rawScale(item) * 0.9;
+}
+
+/** Starting a drag: get each card a stand-in that matches its current size,
+    so the switch to it is invisible. */
+function beginDrag(d) {
+  drag = d;
+  if (d.mode !== 'move' && d.mode !== 'resize') return;
+  const cards = d.mode === 'resize' ? [d.item] : state.sel.items;
+  for (const it of cards) {
+    if (it?.type !== 'card') continue;
+    const want = needsBake(it);
+    if (want) bakeCard(it, want);
+  }
 }
 
 /* ---------------------------------------------------------------- items */
@@ -751,7 +787,7 @@ function pos(e) {
 
 ink.addEventListener('pointerdown', (e) => {
   if (e.button === 1 || state.space || e.altKey) {
-    drag = { mode: 'pan', last: pos(e) };
+    beginDrag({ mode: 'pan', last: pos(e) });
     ink.setPointerCapture(e.pointerId);
     return;
   }
@@ -770,7 +806,7 @@ ink.addEventListener('pointerdown', (e) => {
       const corner = cornerHit(solo, x, y);
       if (corner) {
         pushUndo();
-        drag = { mode: 'resize', item: solo, corner, start: { ...solo } };
+        beginDrag({ mode: 'resize', item: solo, corner, start: { ...solo } });
         return;
       }
     }
@@ -778,7 +814,7 @@ ink.addEventListener('pointerdown', (e) => {
     if (sb && x >= sb.x - 6 && x <= sb.x + sb.w + 6 &&
         y >= sb.y - 6 && y <= sb.y + sb.h + 6) {
       pushUndo();
-      drag = { mode: 'move', last: [x, y] };
+      beginDrag({ mode: 'move', last: [x, y] });
       return;
     }
   } else if (state.sel.strokes.length || state.sel.items.length) {
@@ -791,7 +827,7 @@ ink.addEventListener('pointerdown', (e) => {
     if (item) {
       pushUndo();
       state.sel = { strokes: [], items: [item] };
-      drag = { mode: 'move', last: [x, y] };
+      beginDrag({ mode: 'move', last: [x, y] });
       draw();
       return;
     }
@@ -799,12 +835,12 @@ ink.addEventListener('pointerdown', (e) => {
     if (s) {
       pushUndo();
       state.sel = { strokes: [s], items: [] };
-      drag = { mode: 'move', last: [x, y] };
+      beginDrag({ mode: 'move', last: [x, y] });
       draw();
       return;
     }
     state.sel = { strokes: [], items: [] };
-    drag = { mode: 'marquee', start: [x, y] };
+    beginDrag({ mode: 'marquee', start: [x, y] });
     draw();
     return;
   }
@@ -818,7 +854,7 @@ ink.addEventListener('pointerdown', (e) => {
 
   if (state.tool === 'eraser') {
     pushUndo();
-    drag = { mode: 'erase', last: [x, y] };
+    beginDrag({ mode: 'erase', last: [x, y] });
     eraseAt(x, y, x, y);
     return;
   }
@@ -830,7 +866,7 @@ ink.addEventListener('pointerdown', (e) => {
   const width = kind === 'highlighter' ? state.size * 3 : state.size;
   state.live = { kind, pts: [[x, y]], width, color: currentColor() };
   if (kind === 'line' || kind === 'rect') state.live.pts.push([x, y]);
-  drag = { mode: 'draw' };
+  beginDrag({ mode: 'draw' });
   draw();
 });
 
