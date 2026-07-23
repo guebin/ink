@@ -6,7 +6,7 @@
 <title>Ink — infinite canvas board</title>
 <meta name="description" content="An infinite-canvas drawing board with Markdown and LaTeX cards. Try it in the browser, or download the macOS app.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="demo.css?v=fb351b2">
+<link rel="stylesheet" href="demo.css?v=6d1528c">
 </head>
 <body>
 
@@ -14,7 +14,7 @@
   <span class="brand">Ink</span>
   <span class="tagline">An infinite canvas for handwriting, screenshots and math — right in the browser</span>
   <nav>
-    <a class="btn" href="https://github.com/guebin/ink#install-macos"
+    <a class="btn" href="https://github.com/guebin/ink"
        target="_blank" rel="noopener">Get the macOS app</a>
   </nav>
 </header>
@@ -51,8 +51,14 @@
   <div class="spacer"></div>
 
   <div class="seg files">
-    <button id="openBtn" disabled title="Opening .ink boards is in the macOS app">Open</button>
-    <button id="saveBtn" disabled title="Saving .ink boards is in the macOS app">Save</button>
+    <!-- A disabled button gets no pointer events, so it never shows a tooltip;
+         the wrapper carries it instead. -->
+    <span class="locked" title="Get the macOS app to open .ink boards">
+      <button id="openBtn" disabled>Open</button>
+    </span>
+    <span class="locked" title="Get the macOS app to save .ink boards">
+      <button id="saveBtn" disabled>Save</button>
+    </span>
     <button id="pngBtn" title="Export the board as PNG">PNG</button>
     <button id="clearBtn" title="Clear the board">Clear</button>
   </div>
@@ -115,7 +121,7 @@
 <footer class="foot">
   This is the web version of <a href="https://github.com/guebin/ink">Ink</a>, a macOS app.
   Draw here and export a PNG; keeping boards as <code>.ink</code> files takes
-  <a href="https://github.com/guebin/ink#install-macos">the app</a>.
+  <a href="https://github.com/guebin/ink">the app</a>.
 </footer>
 
 <input type="file" id="file" accept=".ink,application/json" hidden>
@@ -123,6 +129,6 @@
 <script src="vendor/katex.min.js"></script>
 <script src="vendor/auto-render.min.js"></script>
 <script src="vendor/marked.min.js"></script>
-<script src="demo.js?v=fb351b2"></script>
+<script src="demo.js?v=6d1528c"></script>
 </body>
 </html>

@@ -95,8 +95,8 @@ body { display: flex; flex-direction: column; }
 .seg.files button:hover { color: var(--text); }
 /* Open and Save read and write real .ink files; on the web they are shown so
    you know they exist, but they belong to the macOS app. */
-.seg.files button[disabled] { opacity: .38; cursor: default; }
-.seg.files button[disabled]:hover { color: var(--muted); background: none; }
+.seg.files .locked { display: inline-flex; cursor: help; }
+.seg.files button[disabled] { opacity: .38; cursor: help; pointer-events: none; }
 
 .divider { width: 1px; height: 22px; background: var(--line); }
 
