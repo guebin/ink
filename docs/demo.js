@@ -1293,7 +1293,11 @@ function fromInkJSON(doc) {
     if (im.source) {
       item = { ...base, type: 'card', source: im.source, el: buildCardEl(im.source) };
     } else {
-      const src = 'data:image/png;base64,' + im.png;
+      // A picked file keeps its own type — a .jpg reads back as a jpeg data
+      // URL — so this field may already be a whole URL, while older files
+      // hold bare PNG bytes. Take it as whichever it says it is.
+      const png = im.png || '';
+      const src = png.startsWith('data:') ? png : 'data:image/png;base64,' + png;
       item = attachImage({ ...base, type: 'img', src, el: buildImgEl(src) });
     }
     overlay.appendChild(item.el);
