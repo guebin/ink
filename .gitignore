@@ -14,3 +14,5 @@ Paint.icns
 Info.plist
 build-app.sh
 install.sh
+p6.json
+pyproject.toml
