@@ -57,8 +57,9 @@ empties the app bundle). Then open **Terminal** and run this once:
 xattr -dr com.apple.quarantine /Applications/Ink.app
 ```
 
-Requires macOS 12 or later. Nothing to install at all: the
-[web version](https://guebin.github.io/ink/) is the same board.
+Requires an Apple Silicon Mac running macOS 12 or later. Nothing to install at
+all: the [web version](https://guebin.github.io/ink/) is the same board with
+Open and Save switched off — `.ink` files need the app.
 
 ## Uninstall
 
@@ -112,21 +113,32 @@ camera over them, so zooming stays crisp at any level.
 | `4` `T` | Text | Markdown · GFM tables · KaTeX math |
 | `5` `L` | Line | |
 | `6` `R` | Rectangle | |
+| `7` | Image | opens a file picker; `⌘V` pastes one instead |
 
-Pen and highlighter each remember their own colour. **Backspace** deletes the
-selection, or — with nothing selected — the most recently added object.
-Unlimited undo/redo (⌘Z / ⇧⌘Z).
+Pen and highlighter each keep their own colour, and the palette changes with
+them — eleven inks for the pen, five marker colours for the highlighter, plus a
+custom-colour picker on either. Line and rectangle draw in the pen's colour.
+**Backspace** deletes the selection, or — with nothing selected — the most
+recently added object. Undo/redo is ⌘Z / ⇧⌘Z, over the last 80 steps.
 
 **Markdown + math cards.** The text tool opens an editor; Markdown, GFM tables
 and KaTeX math (`$x^2$`, `$$\int_0^\infty$$`) render as a card on the board —
 sharp at any zoom, movable, resizable, and double-click to edit the source
 again. KaTeX ships with the app, so it works offline.
 
-**Images.** `⌘V` drops a screenshot or image file onto the visible board,
-selected and ready to place. Draw on top of it freely.
+**Images.** `⌘V` drops a screenshot or copied image onto the visible board, and
+the image button — key `7` — picks one from disk instead. Either way it arrives
+centred and selected, ready to move or resize. Draw on top of it freely.
+
+**Copy and paste.** `⌘C` and `⌘X` copy or cut the selection — strokes, cards and
+images alike; `⌘V` puts it back slightly offset from the original and already
+selected. Objects ride the system clipboard as tagged text, so a copy also
+carries between two browser tabs, and between the app and the web version.
 
 **Files.** `.ink` documents are JSON — strokes, images, and the Markdown source
-of every card. Boards also export as PNG.
+of every card. Boards also export as PNG at up to four times their own size:
+strokes and cards re-render from vectors, so the export comes out sharper than
+the screen rather than a photograph of it.
 
 ## How it's built
 
