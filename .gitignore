@@ -7,3 +7,10 @@ dist/
 .venv
 err/
 
+
+# The old Paint app stays on disk here, but is not part of the repo.
+Sources/Paint/
+Paint.icns
+Info.plist
+build-app.sh
+install.sh

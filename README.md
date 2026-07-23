@@ -139,9 +139,6 @@ adds the native window, menus, file panels and `.ink` document handling.
 ./scripts/make-dmg.sh 1.0.0   # build a release .dmg
 ```
 
-`Sources/Paint/` is the pixel-based raster app this repo started as, kept as a
-legacy reference and no longer developed.
-
 ## Credits
 
 Bundles [KaTeX](https://katex.org) and [marked](https://marked.js.org) (both
