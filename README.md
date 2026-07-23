@@ -6,8 +6,8 @@ LaTeX cards rendered right onto the board.
 
 ### ▶︎ [Try it in your browser — guebin.github.io/ink](https://guebin.github.io/ink/)
 
-No install, no sign-in. The web version is the same board as the app, and the
-`.ink` files it saves open in the app (and the other way round).
+No install, no sign-in — the same board as the app, for drawing and exporting
+a PNG. Keeping boards as `.ink` files is the app's job.
 
 ## Install (macOS)
 
