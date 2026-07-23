@@ -305,9 +305,10 @@ function syncItems() {
     if (it.type === 'card') {
       // keep the card's natural layout and scale it, so resizing doesn't
       // reflow the text (matches how the app scales its vector card)
-      it.el.style.width = (it.nw || it.w) + 'px';
+      ensureCardMetrics(it);
+      it.el.style.width = it.nw + 'px';
       it.el.style.transform =
-        `translate(${sx}px, ${sy}px) scale(${z * (it.w / (it.nw || it.w))})`;
+        `translate(${sx}px, ${sy}px) scale(${z * (it.w / it.nw)})`;
     } else {
       it.el.style.width = it.w + 'px';
       it.el.style.height = it.h + 'px';
@@ -419,6 +420,7 @@ const cardObserver = new ResizeObserver((entries) => {
     if (!w || !h) continue;
     if (Math.abs(w - item.nw) < 0.5 && Math.abs(h - item.nh) < 0.5) continue;
     const scale = (item.nw ? item.w / item.nw : 1) || 1;   // keep any user resize
+    if (!Number.isFinite(scale) || scale <= 0) continue;
     item.nw = w;
     item.nh = h;
     item.w = w * scale;
@@ -429,7 +431,20 @@ const cardObserver = new ResizeObserver((entries) => {
 });
 
 function trackCard(item) {
+  ensureCardMetrics(item);
   cardObserver.observe(item.el);
+}
+
+/** A card resizes by scaling its natural layout, so it needs that natural
+    size recorded. Cards rebuilt from a file arrive with a display size only —
+    measure them, or a resize would stretch the selection box while the card
+    itself stayed put. */
+function ensureCardMetrics(item) {
+  if (item.type !== 'card' || (item.nw && item.nh)) return;
+  const [w, h] = measureCard(item.el);
+  item.nw = w;
+  item.nh = h;
+  if (!item.w || !item.h) { item.w = w; item.h = h; }
 }
 
 function addCard(source, at) {
