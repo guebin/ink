@@ -128,6 +128,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
             return
         }
+        // `Ink --probe script.js` runs a script against the shipped board and
+        // prints whatever it returns, so board behaviour can be measured from
+        // a script instead of inferred from a screenshot.
+        if let i = args.firstIndex(of: "--probe"), args.count > i + 1 {
+            let script = (try? String(contentsOfFile: args[i + 1], encoding: .utf8)) ?? ""
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
+                self.board(script) { value in
+                    print("PROBE: \(value ?? "no result")")
+                    // `--shot out.png` writes what the board actually looks
+                    // like, so a change can be checked instead of assumed.
+                    if let s = args.firstIndex(of: "--shot"), args.count > s + 1 {
+                        self.web.takeSnapshot(with: nil) { image, _ in
+                            if let image, let tiff = image.tiffRepresentation,
+                               let rep = NSBitmapImageRep(data: tiff),
+                               let data = rep.representation(using: .png, properties: [:]) {
+                                try? data.write(to: URL(fileURLWithPath: args[s + 1]))
+                                print("SHOT: \(rep.pixelsWide)x\(rep.pixelsHigh)")
+                            }
+                            exit(0)
+                        }
+                        return
+                    }
+                    if !args.contains("--keep") { exit(0) }
+                }
+            }
+            return
+        }
         if let pending = pendingOpenURL {
             pendingOpenURL = nil
             load(url: pending)
@@ -329,9 +356,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let alert = NSAlert()
         alert.messageText = "변경 사항을 저장할까요?"
         alert.informativeText = "저장하지 않으면 지금 보드의 내용이 사라집니다."
+        // macOS order: 저장 · 저장 안 함 · 취소, with ⌘D and Esc where the
+        // system puts them.
         alert.addButton(withTitle: "저장")
-        alert.addButton(withTitle: "취소")
-        alert.addButton(withTitle: "저장 안 함")
+        alert.addButton(withTitle: "저장 안 함").keyEquivalent = "d"
+        alert.buttons[1].keyEquivalentModifierMask = .command
+        alert.addButton(withTitle: "취소").keyEquivalent = "\u{1b}"
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             // serializing the board is asynchronous, so this can't block until
@@ -339,9 +369,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             saveDocument(nil)
             return false
         case .alertSecondButtonReturn:
-            return false
+            return true      // 저장 안 함 — go ahead and discard
         default:
-            return true
+            return false     // 취소
         }
     }
 

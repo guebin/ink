@@ -139,7 +139,9 @@ body { display: flex; flex-direction: column; }
   background: #fff;
   color: #111;
   padding: 10px 14px;
-  font: 15px/1.5 -apple-system, "Apple SD Gothic Neo", sans-serif;
+  /* Must match CARD_BITMAP_CSS exactly: this element is what the card is
+     measured from, and the SVG is what gets drawn. */
+  font: 15px/1.5 "Helvetica Neue", "Apple SD Gothic Neo", Helvetica, Arial, sans-serif;
 }
 .item.card > :first-child { margin-top: 0; }
 .item.card > :last-child { margin-bottom: 0; }

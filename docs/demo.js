@@ -131,7 +131,9 @@ const rectsOverlap = (a, b) =>
 function snapshot() {
   return JSON.stringify({
     strokes: state.strokes,
-    items: state.items.map(({ el, ...rest }) => rest),
+    // The pictures can't survive JSON — an Image or a canvas comes back as
+    // `{}`, and drawing that throws. They're rebuilt from the source anyway.
+    items: state.items.map(({ el, svg, bmp, bmpScale, baking, imgEl, ...rest }) => rest),
   });
 }
 
@@ -262,7 +264,17 @@ function selectionBounds() {
   return b;
 }
 
+/** Pointer events arrive faster than the screen refreshes, so a drag that
+    painted on every one of them did the same work several times a frame.
+    Coalescing to one paint per frame is what makes dragging feel smooth. */
+let drawPending = 0;
+function drawSoon() {
+  if (drawPending) return;
+  drawPending = requestAnimationFrame(() => { drawPending = 0; draw(); });
+}
+
 function draw() {
+  if (drawPending) { cancelAnimationFrame(drawPending); drawPending = 0; }
   drawGrid();
   const w = stage.clientWidth, h = stage.clientHeight;
   ctx.clearRect(0, 0, w, h);
@@ -414,8 +426,9 @@ const CARD_BITMAP_CSS = `
     box-sizing: border-box;
     background: #fff; color: #111;
     padding: 10px 14px;
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-          "Helvetica Neue", Arial, sans-serif;
+    /* Named fonts only: -apple-system resolves on the page but not inside an
+       SVG image, and the two contexts then wrap text differently. */
+    font: 15px/1.5 "Helvetica Neue", "Apple SD Gothic Neo", Helvetica, Arial, sans-serif;
   }
   .card > :first-child { margin-top: 0 } .card > :last-child { margin-bottom: 0 }
   .card h1 { font-size: 1.5em } .card h2 { font-size: 1.3em } .card h3 { font-size: 1.15em }
@@ -430,24 +443,64 @@ const CARD_BITMAP_CSS = `
     whatever size it is drawn — so a card stays sharp however far you zoom —
     plus a flat bitmap used only while dragging, where re-rasterising every
     frame is what made the old DOM cards lag. */
+/** The stylesheet belongs to the <svg>, not inside the card: as a child of the
+    card it was its own `:first-child`, so the rule that zeroes the first
+    paragraph's top margin hit the <style> and the text sat an em too low. */
+function cardSVG(body, styles, w, h) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
+    + `<style>${styles}</style>`
+    + `<foreignObject width="100%" height="100%">`
+    + `<div xmlns="http://www.w3.org/1999/xhtml" class="card" style="width:${w}px">`
+    + `${body}</div></foreignObject></svg>`;
+}
+
+function loadSVG(svg) {
+  return new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+/** How tall the card really came out inside the SVG. The page and the SVG are
+    separate documents, so a line can wrap in one and not the other; trusting
+    the page's measurement alone is what cut the bottom off long cards. The
+    card paints itself white, so the last row it painted is its height. */
+function svgCardHeight(img, w, guess) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, w);
+  c.height = Math.max(1, guess);
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, w, guess);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  for (let y = c.height - 1; y >= 0; y--) {
+    const row = y * c.width * 4;
+    for (let x = 0; x < c.width; x++) {
+      if (px[row + x * 4 + 3] > 8) return y + 1;
+    }
+  }
+  return 0;
+}
+
 async function bakeCard(item, scale) {
   if (item.baking) return;
   item.baking = true;
   try {
     const styles = await cardStyleSheet();
     const w = Math.max(1, Math.round(item.nw));
-    const h = Math.max(1, Math.round(item.nh));
+    let h = Math.max(1, Math.round(item.nh));
     const body = item.el.innerHTML;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
-      + `<foreignObject width="100%" height="100%">`
-      + `<div xmlns="http://www.w3.org/1999/xhtml" class="card" style="width:${w}px">`
-      + `<style>${styles}</style>${body}</div></foreignObject></svg>`;
-    const img = await new Promise((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = rej;
-      i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-    });
+    let img = await loadSVG(cardSVG(body, styles, w, h * 3 + 200));
+    const real = svgCardHeight(img, w, h * 3 + 200);
+    if (real && Math.abs(real - h) > 1) {
+      // Keep any resize the user has applied while the natural size moves.
+      const k = item.nh ? item.h / item.nh : 1;
+      item.nh = real;
+      item.h = real * k;
+      h = real;
+    }
+    img = await loadSVG(cardSVG(body, styles, w, h));
     item.svg = img;          // vector: sharp at any size
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w * scale));
@@ -544,9 +597,13 @@ const cardObserver = new ResizeObserver((entries) => {
     const w = entry.target.offsetWidth;
     const h = entry.target.offsetHeight;
     if (!w || !h) continue;
-    if (Math.abs(w - item.nw) < 0.5 && Math.abs(h - item.nh) < 0.5) continue;
+    // Compare against what the page last reported, not against nh — the
+    // height of record comes from the bake, and comparing the two would have
+    // the observer and the bake overwrite each other forever.
+    if (Math.abs(w - item.nw) < 0.5 && Math.abs(h - (item.domH ?? h)) < 0.5) continue;
     const scale = (item.nw ? item.w / item.nw : 1) || 1;   // keep any user resize
     if (!Number.isFinite(scale) || scale <= 0) continue;
+    item.domH = h;
     item.nw = w;
     item.nh = h;
     item.w = w * scale;
@@ -571,6 +628,7 @@ function ensureCardMetrics(item) {
   const [w, h] = measureCard(item.el);
   item.nw = w;
   item.nh = h;
+  item.domH = h;
   if (!item.w || !item.h) { item.w = w; item.h = h; }
 }
 
@@ -579,7 +637,7 @@ function addCard(source, at) {
   overlay.appendChild(el);
   const [w, h] = measureCard(el);
   const c = at || centerWorld();
-  const item = { id: nextId++, type: 'card', source, nw: w, nh: h,
+  const item = { id: nextId++, type: 'card', source, nw: w, nh: h, domH: h,
                  x: c[0] - w / 2, y: c[1] - h / 2, w, h, el };
   state.items.push(item);
   state.sel = { strokes: [], items: [item] };
@@ -754,7 +812,7 @@ ink.addEventListener('pointermove', (e) => {
     state.cam.x -= (px - lx) / state.cam.z;
     state.cam.y -= (py - ly) / state.cam.z;
     drag.last = [px, py];
-    draw();
+    drawSoon();
     return;
   }
   if (!drag) return;
@@ -763,7 +821,7 @@ ink.addEventListener('pointermove', (e) => {
   if (drag.mode === 'resize') {
     const { item, corner, start } = drag;
     Object.assign(item, resizedRect(start, corner, x, y));
-    draw();
+    drawSoon();
     return;
   }
 
@@ -774,14 +832,14 @@ ink.addEventListener('pointermove', (e) => {
       s.pts = s.pts.map(([sx, sy]) => [sx + dx, sy + dy]);
     });
     drag.last = [x, y];
-    draw();
+    drawSoon();
   } else if (drag.mode === 'marquee') {
     const [sx, sy] = drag.start;
     state.marquee = {
       x: Math.min(sx, x), y: Math.min(sy, y),
       w: Math.abs(x - sx), h: Math.abs(y - sy),
     };
-    draw();
+    drawSoon();
   } else if (drag.mode === 'erase') {
     eraseAt(drag.last[0], drag.last[1], x, y);
     drag.last = [x, y];
@@ -794,7 +852,7 @@ ink.addEventListener('pointermove', (e) => {
       if (Math.abs(x - last[0]) * state.cam.z > 0.5 ||
           Math.abs(y - last[1]) * state.cam.z > 0.5) p.push([x, y]);
     }
-    draw();
+    drawSoon();
   }
 });
 
@@ -980,6 +1038,7 @@ function commitEditor() {
     target.svg = null;
     target.nw = w;
     target.nh = h;
+    target.domH = h;
     target.w = w * scale;
     target.h = h * scale;
     draw();
