@@ -110,3 +110,4 @@ echo "   sha256: $SHA"
 echo
 echo "Next:"
 echo "  gh release create v$VERSION $DMG -t \"Ink $VERSION\""
+echo "  # then update Casks/ink.rb: version $VERSION, sha256 $SHA"
