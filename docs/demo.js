@@ -1218,20 +1218,34 @@ document.addEventListener('paste', (e) => {
     return;
   }
   e.preventDefault();
+  insertImageFile(file);
+});
+
+/** Drop an image file onto the board, whether it arrived by ⌘V or by being
+    picked from disk. It comes in selected, so hand over the tool that can
+    move it — otherwise the toolbar and the board disagree. */
+function insertImageFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
     img.onload = () => {
       pushUndo();
-      // the pasted image comes in selected, so switch to the tool that can
-      // actually move it — otherwise the toolbar and the board disagree
       setTool('select');
       addImage(reader.result, img.width, img.height);
     };
     img.src = reader.result;
   };
   reader.readAsDataURL(file);
-});
+}
+
+const imgFile = document.getElementById('imgFile');
+const pickImage = () => imgFile.click();
+document.getElementById('imgBtn').onclick = pickImage;
+imgFile.onchange = (e) => {
+  insertImageFile(e.target.files?.[0]);
+  e.target.value = '';      // so the same file can be picked twice
+};
 
 /* ---------------------------------------------------------------- files */
 
@@ -1409,7 +1423,8 @@ function drawStrokesInto(g, strokes) {
 
 /* ------------------------------------------------------------------ UI */
 
-const toolButtons = [...document.querySelectorAll('#tools button')];
+// [data-tool] only: the image button next to them is an action, not a mode.
+const toolButtons = [...document.querySelectorAll('#tools button[data-tool]')];
 
 function setTool(tool) {
   if (tool === 'ink' && state.tool === 'ink') {
@@ -1561,6 +1576,7 @@ document.addEventListener('keydown', (e) => {
     setTool('select');
     return;
   }
+  if (e.code === 'Digit7') { e.preventDefault(); pickImage(); return; }
   const t = KEYS[e.code];
   if (t) { e.preventDefault(); setTool(t); }
 });

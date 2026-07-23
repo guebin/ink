@@ -6,7 +6,7 @@
 <title>Ink — infinite canvas board</title>
 <meta name="description" content="An infinite-canvas drawing board with Markdown and LaTeX cards. Try it in the browser, or download the macOS app.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="demo.css?v=6d1528c">
+<link rel="stylesheet" href="demo.css?v=7f2a04d">
 </head>
 <body>
 
@@ -38,6 +38,13 @@
     </button>
     <button data-tool="rect" title="Rectangle (6 · R)">
       <svg viewBox="0 0 20 20" class="stroke"><rect x="3.5" y="5.5" width="13" height="9" rx="1.5"/></svg>
+    </button>
+    <button id="imgBtn" title="Insert an image (7) — or paste one with ⌘V">
+      <svg viewBox="0 0 20 20" class="stroke">
+        <rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/>
+        <path d="M2.5 13 6.5 9l3 2.5L13 8l4.5 4"/>
+        <circle cx="7" cy="7.6" r="1.1"/>
+      </svg>
     </button>
   </div>
 
@@ -125,10 +132,11 @@
 </footer>
 
 <input type="file" id="file" accept=".ink,application/json" hidden>
+<input type="file" id="imgFile" accept="image/*" hidden>
 
 <script src="vendor/katex.min.js"></script>
 <script src="vendor/auto-render.min.js"></script>
 <script src="vendor/marked.min.js"></script>
-<script src="demo.js?v=6d1528c"></script>
+<script src="demo.js?v=7f2a04d"></script>
 </body>
 </html>
