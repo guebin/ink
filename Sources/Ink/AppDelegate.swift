@@ -308,44 +308,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
-    /// Photograph the web view rather than re-drawing the board: what the
-    /// snapshot carries is exactly what's on screen, fonts and KaTeX layout
-    /// included, which a canvas re-draw only approximates.
+    /// The board draws itself into an offscreen canvas at several times its
+    /// own size. Photographing the web view was simpler, but it capped the
+    /// export at whatever the window happened to be — cards are vector now,
+    /// so a re-draw loses nothing and can be as large as we ask.
     @objc private func exportPNG(_ sender: Any?) {
-        board("return inkNative.prepareSnapshot()") { [weak self] value in
+        board("return await inkNative.exportPNG()") { [weak self] value in
             guard let self else { return }
-            // nil means the board is empty — nothing to photograph
-            guard let r = value as? [String: Any],
-                  let x = (r["x"] as? NSNumber)?.doubleValue,
-                  let y = (r["y"] as? NSNumber)?.doubleValue,
-                  let w = (r["w"] as? NSNumber)?.doubleValue,
-                  let h = (r["h"] as? NSNumber)?.doubleValue, w > 1, h > 1
-            else {
-                self.board("return inkNative.endSnapshot()")
+            // nil means the board is empty — nothing to export
+            guard let url = value as? String,
+                  let comma = url.firstIndex(of: ","),
+                  let data = Data(base64Encoded: String(url[url.index(after: comma)...])),
+                  !data.isEmpty
+            else { NSSound.beep(); return }
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.png]
+            panel.nameFieldStringValue =
+                (self.documentURL?.deletingPathExtension().lastPathComponent ?? "Ink") + ".png"
+            guard panel.runModal() == .OK, let out = panel.url else { return }
+            do {
+                try data.write(to: out)
+                NSLog("Ink exported %d bytes to %@", data.count, out.path)
+            } catch {
+                NSLog("Ink export failed: %@", error.localizedDescription)
                 NSSound.beep()
-                return
-            }
-            let config = WKSnapshotConfiguration()
-            config.rect = CGRect(x: x, y: y, width: w, height: h)
-            self.web.takeSnapshot(with: config) { image, _ in
-                self.board("return inkNative.endSnapshot()")
-                guard let image,
-                      let tiff = image.tiffRepresentation,
-                      let rep = NSBitmapImageRep(data: tiff),
-                      let data = rep.representation(using: .png, properties: [:])
-                else { NSSound.beep(); return }
-                let panel = NSSavePanel()
-                panel.allowedContentTypes = [.png]
-                panel.nameFieldStringValue =
-                    (self.documentURL?.deletingPathExtension().lastPathComponent ?? "Ink") + ".png"
-                guard panel.runModal() == .OK, let url = panel.url else { return }
-                do {
-                    try data.write(to: url)
-                    NSLog("Ink exported %d bytes to %@", data.count, url.path)
-                } catch {
-                    NSLog("Ink export failed: %@", error.localizedDescription)
-                    NSSound.beep()
-                }
             }
         }
     }

@@ -1303,14 +1303,23 @@ document.getElementById('pngBtn').onclick = async () => {
   download('board.png', new Blob([buf], { type: 'image/png' }));
 };
 
-/** Render the whole board (strokes, images, cards) to a PNG data URL. */
+const EXPORT_SCALE = 4;         // 4× the board's own size
+const EXPORT_MAX_PIXELS = 40e6; // ~40 megapixels, so a huge board still saves
+
+/** Render the whole board (strokes, images, cards) to a PNG data URL. Cards
+    are drawn from their SVG, which re-rasterises at whatever size it's given,
+    so the export is as sharp as the number below asks for — nothing here is
+    limited by the size of the window. */
 async function exportPNGDataURL() {
   const b = contentBounds();
   if (!b) return null;
-  const pad = 40, s = 2;
+  const pad = 40;
+  const w = b.w + pad * 2, h = b.h + pad * 2;
+  const s = Math.max(1, Math.min(EXPORT_SCALE, Math.sqrt(EXPORT_MAX_PIXELS / (w * h))));
+
   const c = document.createElement('canvas');
-  c.width = (b.w + pad * 2) * s;
-  c.height = (b.h + pad * 2) * s;
+  c.width = Math.round(w * s);
+  c.height = Math.round(h * s);
   const g = c.getContext('2d');
   g.fillStyle = '#fff';
   g.fillRect(0, 0, c.width, c.height);
@@ -1318,9 +1327,9 @@ async function exportPNGDataURL() {
   g.translate(-b.x + pad, -b.y + pad);
 
   for (const it of state.items) {
-    if (it.type === 'card' && !it.bmp) await bakeCard(it, 2);
-    const bmp = it.type === 'card' ? it.bmp : it.imgEl;
-    if (bmp) g.drawImage(bmp, it.x, it.y, it.w, it.h);
+    if (it.type === 'card' && !it.svg) await bakeCard(it, 2);
+    const pic = it.type === 'card' ? (it.svg || it.bmp) : it.imgEl;
+    if (pic) g.drawImage(pic, it.x, it.y, it.w, it.h);
   }
   drawStrokesInto(g, state.strokes);
   return c.toDataURL('image/png');
