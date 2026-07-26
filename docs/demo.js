@@ -32,6 +32,7 @@ const state = {
   sel: { strokes: [], items: [] },
   live: null,           // stroke being drawn
   marquee: null,
+  hover: null,          // the chooser row the cursor is on, outlined on canvas
   space: false,
 };
 
@@ -42,6 +43,7 @@ const redoStack = [];
 /* ------------------------------------------------------------- geometry */
 
 const toWorld = (px, py) => [px / state.cam.z + state.cam.x, py / state.cam.z + state.cam.y];
+const toScreen = (wx, wy) => [(wx - state.cam.x) * state.cam.z, (wy - state.cam.y) * state.cam.z];
 
 /** Which colour slot the toolbar is editing right now. */
 const activeInk = () =>
@@ -151,6 +153,7 @@ function pushUndo() {
 }
 
 function restore(snap) {
+  closeChooser();   // its rows point at objects this is about to replace
   const data = JSON.parse(snap);
   state.strokes = data.strokes;
   state.items.forEach((i) => i.el.remove());
@@ -303,6 +306,16 @@ function draw() {
     const solo = soloItem();
     if (solo) drawHandles(solo);
 
+  }
+  // Which row of the chooser is which object. Coral, so it reads as a
+  // different thing from the blue the selection is drawn in.
+  if (state.hover) {
+    const b = boundsOf(state.hover);
+    ctx.save();
+    ctx.strokeStyle = '#e2604a';
+    ctx.lineWidth = 2 / state.cam.z;
+    ctx.strokeRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6);
+    ctx.restore();
   }
   if (state.marquee) {
     const m = state.marquee;
@@ -789,6 +802,107 @@ function syncZoomUI() {
   }
 }
 
+/* -------------------------------------------------------------- chooser */
+
+/* Aiming at a buried object is the part that does not work when objects
+   overlap: whatever is on top gets the click, and there is no angle of
+   attack for the one underneath. So don't aim. Lasso the area, and the
+   chooser lists everything it caught — topmost first, one key each. */
+
+const chooserEl = document.getElementById('chooser');
+let chooserHits = [];
+
+const chooserOpen = () => !chooserEl.hidden;
+
+function closeChooser() {
+  if (chooserEl.hidden) return;
+  chooserEl.hidden = true;
+  chooserEl.innerHTML = '';
+  chooserHits = [];
+  if (state.hover) { state.hover = null; draw(); }
+}
+
+/** Enough of an object to recognise it in a list without looking at it. */
+function objectLabel(o) {
+  if (isStroke(o)) {
+    const kind = { pen: 'Pen', highlighter: 'Highlighter',
+                   line: 'Line', rect: 'Rectangle' }[o.kind] || 'Stroke';
+    return { name: kind, color: o.color };
+  }
+  if (o.type === 'img') {
+    return { name: `Image ${Math.round(o.w)}×${Math.round(o.h)}` };
+  }
+  // Markdown punctuation is noise in a one-line name; the words are the point.
+  const words = (o.source || '').replace(/[#*`>_$~\-[\]()]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (!words) return { name: 'Card' };
+  return { name: `Card “${words.length > 26 ? words.slice(0, 26) + '…' : words}”` };
+}
+
+function chooserRow(label, key, onPick, onHover) {
+  const b = document.createElement('button');
+  const k = document.createElement('span');
+  k.className = 'key';
+  k.textContent = key;
+  b.appendChild(k);
+  if (label.color) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.style.background = label.color;
+    b.appendChild(chip);
+  }
+  const n = document.createElement('span');
+  n.className = 'name';
+  n.textContent = label.name;
+  b.appendChild(n);
+  b.onclick = onPick;
+  b.onmouseenter = () => onHover(true);
+  b.onmouseleave = () => onHover(false);
+  return b;
+}
+
+/** Narrow the selection to one of the caught objects, or keep the lot. */
+function chooseFromStack(i) {
+  if (i !== null && !chooserHits[i]) return;
+  state.sel = i === null
+    ? { strokes: chooserHits.filter(isStroke),
+        items: chooserHits.filter((o) => !isStroke(o)) }
+    : selectionOf(chooserHits[i]);
+  closeChooser();
+  draw();
+}
+
+function openChooser(hits, px, py) {
+  closeChooser();
+  chooserHits = hits;
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.textContent = `${hits.length} objects — 1…${Math.min(hits.length, 9)} picks one`
+    + ', 0 keeps all, Esc closes';
+  chooserEl.appendChild(head);
+
+  hits.forEach((o, i) => {
+    // Past nine there is no digit left to offer; the row still clicks.
+    const key = i < 9 ? String(i + 1) : '·';
+    chooserEl.appendChild(chooserRow(objectLabel(o), key, () => chooseFromStack(i),
+      (on) => { state.hover = on ? o : null; draw(); }));
+  });
+
+  const all = chooserRow({ name: `Keep all ${hits.length}` }, '0',
+    () => chooseFromStack(null), () => {});
+  all.classList.add('all');
+  chooserEl.appendChild(all);
+
+  chooserEl.hidden = false;
+  // Measured only once it is laid out, so it can be kept on screen.
+  const w = chooserEl.offsetWidth, h = chooserEl.offsetHeight;
+  chooserEl.style.left =
+    Math.max(8, Math.min(px + 10, stage.clientWidth - w - 8)) + 'px';
+  chooserEl.style.top =
+    Math.max(8, Math.min(py + 10, stage.clientHeight - h - 8)) + 'px';
+}
+
 /* -------------------------------------------------------------- pointer */
 
 let drag = null;
@@ -798,7 +912,53 @@ function pos(e) {
   return [e.clientX - r.left, e.clientY - r.top];
 }
 
+const isStroke = (o) => !!o.pts;
+
+const selectionOf = (o) =>
+  isStroke(o) ? { strokes: [o], items: [] } : { strokes: [], items: [o] };
+
+const isSelected = (o) =>
+  isStroke(o) ? state.sel.strokes.includes(o) : state.sel.items.includes(o);
+
+const boundsOf = (o) =>
+  isStroke(o) ? strokeBounds(o) : { x: o.x, y: o.y, w: o.w, h: o.h };
+
+/** Every object, topmost first. Painting goes items then strokes, so this is
+    exactly the reverse of that — a line drawn over a card sits above it on
+    screen and has to sit above it here too. */
+const topFirst = () =>
+  [...state.strokes].reverse().concat([...state.items].reverse());
+
+/** Everything under the point, topmost first. */
+function picksAt(x, y, tol) {
+  return topFirst().filter((o) => (isStroke(o)
+    ? strokeHit(o, x, y, tol)
+    : x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h));
+}
+
+/** Everything the lasso caught, topmost first. */
+const objectsIn = (m) => topFirst().filter((o) => rectsOverlap(boundsOf(o), m));
+
+/** Where the last click landed and what it took, so clicking a stack twice
+    without moving walks down it instead of picking the top one again — the
+    only way to reach what is buried. A drag clears this: pressing an object
+    to move it once more is not a second click. Held in world coordinates, so
+    panning away from the spot ends the cycle on its own. */
+let lastPick = null;
+
+function pickAt(x, y, tol) {
+  const hits = picksAt(x, y, tol);
+  if (!hits.length) return null;
+  const near = 3 / state.cam.z;
+  if (lastPick && Math.abs(x - lastPick.x) <= near && Math.abs(y - lastPick.y) <= near) {
+    const i = hits.indexOf(lastPick.obj);
+    if (i >= 0) return hits[(i + 1) % hits.length];
+  }
+  return hits[0];
+}
+
 ink.addEventListener('pointerdown', (e) => {
+  closeChooser();   // going back to the board is an answer too
   if (e.button === 1 || state.space || e.altKey) {
     beginDrag({ mode: 'pan', last: pos(e) });
     ink.setPointerCapture(e.pointerId);
@@ -823,6 +983,20 @@ ink.addEventListener('pointerdown', (e) => {
         return;
       }
     }
+    // What is actually under the cursor decides, not the selection's bounding
+    // box: a box big enough to cover a neighbour used to swallow every click
+    // on it, whichever one was drawn on top.
+    const hit = pickAt(x, y, tol);
+    if (hit) {
+      lastPick = { x, y, obj: hit };
+      pushUndo();
+      if (!isSelected(hit)) state.sel = selectionOf(hit);
+      beginDrag({ mode: 'move', last: [x, y] });
+      draw();
+      return;
+    }
+    lastPick = null;
+    // Nothing under the cursor, so the gaps inside a selection still drag it.
     const sb = selectionBounds();
     if (sb && x >= sb.x - 6 && x <= sb.x + sb.w + 6 &&
         y >= sb.y - 6 && y <= sb.y + sb.h + 6) {
@@ -830,32 +1004,12 @@ ink.addEventListener('pointerdown', (e) => {
       beginDrag({ mode: 'move', last: [x, y] });
       return;
     }
-  } else if (state.sel.strokes.length || state.sel.items.length) {
-    state.sel = { strokes: [], items: [] };
-  }
-
-  if (state.tool === 'select') {
-    const item = [...state.items].reverse()
-      .find((i) => x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h);
-    if (item) {
-      pushUndo();
-      state.sel = { strokes: [], items: [item] };
-      beginDrag({ mode: 'move', last: [x, y] });
-      draw();
-      return;
-    }
-    const s = [...state.strokes].reverse().find((k) => strokeHit(k, x, y, tol));
-    if (s) {
-      pushUndo();
-      state.sel = { strokes: [s], items: [] };
-      beginDrag({ mode: 'move', last: [x, y] });
-      draw();
-      return;
-    }
     state.sel = { strokes: [], items: [] };
     beginDrag({ mode: 'marquee', start: [x, y] });
     draw();
     return;
+  } else if (state.sel.strokes.length || state.sel.items.length) {
+    state.sel = { strokes: [], items: [] };
   }
 
   if (state.tool === 'text') {
@@ -905,6 +1059,8 @@ ink.addEventListener('pointermove', (e) => {
 
   if (drag.mode === 'move') {
     const dx = x - drag.last[0], dy = y - drag.last[1];
+    drag.moved = (drag.moved || 0) + (Math.abs(dx) + Math.abs(dy)) * state.cam.z;
+    if (drag.moved > 3) lastPick = null;
     state.sel.items.forEach((i) => { i.x += dx; i.y += dy; });
     state.sel.strokes.forEach((s) => {
       s.pts = s.pts.map(([sx, sy]) => [sx + dx, sy + dy]);
@@ -955,10 +1111,14 @@ function endDrag() {
   if (drag.mode === 'marquee') {
     const m = state.marquee;
     if (m && (m.w > 3 || m.h > 3)) {
+      const caught = objectsIn(m);
       state.sel = {
-        strokes: state.strokes.filter((s) => rectsOverlap(strokeBounds(s), m)),
-        items: state.items.filter((i) => rectsOverlap(i, m)),
+        strokes: caught.filter(isStroke),
+        items: caught.filter((o) => !isStroke(o)),
       };
+      // One object is not a stack and needs no menu. More than one, and the
+      // lasso is the way in: everything it caught, listed and keyed.
+      if (caught.length > 1) openChooser(caught, ...toScreen(m.x + m.w, m.y + m.h));
     }
     state.marquee = null;
   }
@@ -1444,6 +1604,7 @@ function drawStrokesInto(g, strokes) {
 const toolButtons = [...document.querySelectorAll('#tools button[data-tool]')];
 
 function setTool(tool) {
+  closeChooser();
   if (tool === 'ink' && state.tool === 'ink') {
     state.lastInk = state.lastInk === 'pen' ? 'highlighter' : 'pen';
   } else if (tool === 'pen' || tool === 'highlighter') {
@@ -1549,6 +1710,22 @@ document.addEventListener('keydown', (e) => {
   if (!modal.hidden) return;
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
   if (typing) return;
+
+  // The chooser owns the digits while it is up — they are tool shortcuts the
+  // rest of the time, and picking off the list is the whole point of it.
+  if (chooserOpen() && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const digit = /^Digit([0-9])$/.exec(e.code);
+    if (digit) {
+      e.preventDefault();
+      const n = +digit[1];
+      chooseFromStack(n === 0 ? null : n - 1);
+      return;
+    }
+    if (e.code === 'Escape') { e.preventDefault(); closeChooser(); return; }
+    // Any other key means the answer is elsewhere; put the menu away and let
+    // the key do its usual job. Modifiers alone are nobody's answer.
+    if (!/^(Shift|Meta|Control|Alt)/.test(e.code)) closeChooser();
+  }
 
   if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ') {
     e.preventDefault();
@@ -1678,6 +1855,7 @@ window.inkNative = {
     snapshotCam = { ...state.cam };   // also tells drawGrid to stay off
     state.sel = { strokes: [], items: [] };
     state.marquee = null;
+    closeChooser();                   // it is a real element; it would be shot
     zoomToFit();
     const b = contentBounds();
     if (!b) { draw(); return null; }

@@ -6,7 +6,7 @@
 <title>Ink — infinite canvas board</title>
 <meta name="description" content="An infinite-canvas drawing board with Markdown and LaTeX cards. Try it in the browser, or download the macOS app.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="demo.css?v=d6cf4ed5">
+<link rel="stylesheet" href="demo.css?v=b76e3523">
 </head>
 <body>
 
@@ -87,6 +87,9 @@
   <div id="hint">
     Draw with the pen · scroll to pan · ⌘/Ctrl+scroll to zoom · <b>Aa</b> for math · ⌘V to paste a screenshot
   </div>
+  <!-- Filled in by the board: what a lasso caught, so a stack can be taken
+       apart by name instead of by aiming at it. -->
+  <div id="chooser" hidden></div>
 </main>
 
 <div id="modal" class="modal" hidden>
@@ -139,6 +142,6 @@
 <script src="vendor/katex.min.js"></script>
 <script src="vendor/auto-render.min.js"></script>
 <script src="vendor/marked.min.js"></script>
-<script src="demo.js?v=efd53611"></script>
+<script src="demo.js?v=ed968f49"></script>
 </body>
 </html>
