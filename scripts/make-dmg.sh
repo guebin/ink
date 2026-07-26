@@ -6,11 +6,16 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-}"
+# The version the repo declares, which the release workflow overrides with the
+# tag it was handed. Passing it only on the command line left nothing in the
+# repo that said what version Ink was at — the plist read 1.0 while 1.0.0 was
+# the thing people had installed.
+VERSION="${1:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info-Ink.plist)}"
 if [ -z "$VERSION" ]; then
-  echo "usage: ./scripts/make-dmg.sh <version>   e.g. 1.0.0" >&2
+  echo "usage: ./scripts/make-dmg.sh <version>   e.g. 1.0.1" >&2
   exit 1
 fi
+echo "▶ version $VERSION"
 
 CONFIG=release
 APP="Ink.app"
