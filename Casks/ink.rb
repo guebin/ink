@@ -1,6 +1,6 @@
 cask "ink" do
-  version "1.0.0"
-  sha256 "f42551caeab7d4f6fefcc56a86531a7029225dcc8300e51ac7ab9b19e6bde513"
+  version "1.0.1"
+  sha256 "e842af47fa37bb8f8a97ec9e77253890a1f0f6d66c194995d9a8637fccb52f26"
 
   url "https://github.com/guebin/ink/releases/download/v#{version}/Ink.dmg",
       verified: "github.com/guebin/ink/"
