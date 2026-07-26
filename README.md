@@ -148,8 +148,27 @@ adds the native window, menus, file panels and `.ink` document handling.
 
 ```bash
 ./install-ink.sh              # build Ink.app and install it to /Applications
-./scripts/make-dmg.sh 1.0.0   # build a release .dmg
+./scripts/make-dmg.sh         # build a release .dmg at the declared version
 ```
+
+## Releasing
+
+The version Ink is at is the one in `Info-Ink.plist`; `make-dmg.sh` reads it
+unless handed another. Bump it, then push the matching tag:
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+That is the whole release. [`.github/workflows/release.yml`](.github/workflows/release.yml)
+builds the dmg on a macOS runner, publishes it, and commits the cask's new
+version and checksum back to `main`, so the download and the formula cannot
+drift apart.
+
+Which number to move: **patch** for fixes, **minor** for features, **major**
+when a board saved by the new version stops opening in the old one. `.ink`
+files carry no format version of their own to negotiate with, so that
+compatibility is what the major number is guarding.
 
 ## Credits
 
